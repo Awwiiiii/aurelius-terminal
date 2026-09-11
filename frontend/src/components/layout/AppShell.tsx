@@ -2,9 +2,10 @@ import React from 'react';
 
 interface AppShellProps {
   children: React.ReactNode;
+  headerCenter?: React.ReactNode;
 }
 
-export const AppShell: React.FC<AppShellProps> = ({ children }) => {
+export const AppShell: React.FC<AppShellProps> = ({ children, headerCenter }) => {
   return (
     <div className="terminal-container">
       <header className="terminal-header">
@@ -15,8 +16,11 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
             <span className="brand-subtitle">Financial Intelligence & Research Terminal</span>
           </div>
         </div>
+
+        {headerCenter && <div className="header-center">{headerCenter}</div>}
+
         <div className="header-meta">
-          <span className="milestone-badge">M1 — MARKET DATA</span>
+          <span className="milestone-badge">M2 — SEARCH & PROFILES</span>
           <span className="live-status">
             <span className="status-dot"></span>
             SYSTEM ONLINE

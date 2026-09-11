@@ -154,6 +154,27 @@ class InvalidTickerError(AureliusError):
         self.message = message
 
 
+class InvalidSearchQueryError(AureliusError):
+    """
+    Raised when a user search query is malformed, empty, or exceeds length limits.
+
+    Maps to HTTP 400 Bad Request.
+
+    Attributes:
+        query:   The invalid query string received.
+        message: Description of the validation failure.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        query: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.query = query
+        self.message = message
+
+
 class DataQualityError(AureliusError):
     """
     Raised when data retrieved from a provider fails quality checks.

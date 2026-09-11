@@ -21,6 +21,8 @@ class AssetType(StrEnum):
     MUTUAL_FUND = "MUTUAL_FUND"
     CRYPTO = "CRYPTO"
     CURRENCY = "CURRENCY"
+    FUTURE = "FUTURE"
+    OPTION = "OPTION"
     UNKNOWN = "UNKNOWN"
 
 

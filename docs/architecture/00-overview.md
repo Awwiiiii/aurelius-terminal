@@ -91,22 +91,23 @@ FastAPI Backend (Python 3.12)
 
 ---
 
-## Current State (Milestone 1)
+## Current State (Milestone 2)
 
 | Component | Status |
 |---|---|
 | Git repository | ✅ Initialized |
 | Backend scaffold | ✅ Created |
-| Domain errors | ✅ Implemented |
-| Domain entities (Quote, OHLCV, Security) | ✅ Implemented (M1) |
+| Domain errors | ✅ Implemented (including InvalidSearchQueryError) |
+| Domain entities (Quote, OHLCV, Security, CompanyProfile, SecuritySearchResult) | ✅ Implemented (M2) |
 | Settings (pydantic-settings) | ✅ Implemented |
 | FastAPI app + health endpoint | ✅ Implemented |
 | Infrastructure logging | ✅ Implemented |
-| Provider abstraction (MarketDataProvider, Registry) | ✅ Implemented (M1) |
-| YFinanceProvider (selective retry, thread offload) | ✅ Implemented (M1) |
+| Provider abstraction (MarketDataProvider, Registry) | ✅ Implemented (M2: search + profile) |
+| YFinanceProvider (selective retry, thread offload) | ✅ Implemented (M2: search + profile) |
 | Market data endpoints (`/quote`, `/ohlcv`) | ✅ Implemented (M1) |
-| Frontend UI (AppShell, QuoteCard, OHLCVTable) | ✅ Implemented (M1) |
-| Database schema | 🔲 Milestone 2+ |
+| Search & profile endpoints (`/search`, `/security/{ticker}`, `/company/{ticker}`) | ✅ Implemented (M2) |
+| Frontend UI (AppShell, SearchBar, SecurityHeader, CompanyProfileCard, QuoteCard, OHLCVTable) | ✅ Implemented (M2) |
+| Database schema | 🔲 Milestone 3+ |
 | Financial calculations | 🔲 Milestone 4+ |
 
 ---
@@ -156,6 +157,7 @@ Do not create ADRs for trivial choices.
 
 **Current ADRs**:
 - [`decisions/0001-yfinance-as-primary-provider.md`](decisions/0001-yfinance-as-primary-provider.md) — YFinance as Primary Market Data Provider in Milestone 1
+- [`decisions/0002-security-search-and-company-profile-architecture.md`](decisions/0002-security-search-and-company-profile-architecture.md) — Security Search, Identity Context, and Polymorphic Company Profile Architecture
 
 ---
 
@@ -163,5 +165,8 @@ Do not create ADRs for trivial choices.
 
 - [`../finance/01-market-basics.md`](../finance/01-market-basics.md) — Financial concepts
 - [`../finance/02-returns.md`](../finance/02-returns.md) — Return calculations
+- [`../finance/03-market-data.md`](../finance/03-market-data.md) — Market data infrastructure
+- [`../finance/04-security-and-company-data.md`](../finance/04-security-and-company-data.md) — Security identity & classifications
 - [Backend `pyproject.toml`](../../backend/pyproject.toml) — Dependency justifications
 - [`.env.example`](../../.env.example) — Configuration reference
+

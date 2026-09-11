@@ -15,9 +15,11 @@ Design principles:
 from abc import ABC, abstractmethod
 from datetime import date
 
+from aurelius.domain.entities.company import CompanyProfile
 from aurelius.domain.entities.enums import MarketInterval
 from aurelius.domain.entities.ohlcv import OHLCVSeries
 from aurelius.domain.entities.quote import Quote
+from aurelius.domain.entities.search import SecuritySearchResult
 from aurelius.domain.entities.security import Security
 
 
@@ -96,5 +98,56 @@ class MarketDataProvider(ABC):
             InvalidTickerError: If the ticker is malformed.
             DataNotFoundError: If the security does not exist.
             ProviderError: If the provider is unreachable.
+        """
+        ...
+
+    @abstractmethod
+    async def search_securities(
+        self, query: str, limit: int = 10
+    ) -> list[SecuritySearchResult]:
+        """
+        Search for securities matching a text query (ticker, company name, asset).
+
+        Accepts general text search queries (e.g. 'Apple', 'S&P 500', 'BRK.B').
+        Sector/industry fields returned in results are provider-supplied classifications
+        and must not be treated as authoritative GICS.
+
+        Args:
+            query: User search text query (1-60 characters).
+            limit: Maximum number of results to return (1-50, default 10).
+
+        Returns:
+            List of matching SecuritySearchResult domain entities.
+
+        Raises:
+            InvalidSearchQueryError: If the query is empty, too long, or invalid.
+            ProviderError: If the underlying search service fails.
+        """
+        ...
+
+    @abstractmethod
+    async def get_company_profile(self, ticker: str) -> CompanyProfile | None:
+        """
+        Retrieve corporate identity, sector, industry, and description for an equity.
+
+        Non-corporate instruments such as ETFs (e.g. SPY) and indices (e.g. ^GSPC)
+        are valid securities but do not have corporate profiles. For non-corporate
+        instruments, this method returns None. Returning None is normal behavior
+        and must never be treated as an error or lookup failure.
+
+        Provider sector and industry classifications are provider-supplied and
+        must not be treated as authoritative GICS.
+
+        Args:
+            ticker: Normalized listing ticker symbol (e.g. 'AAPL').
+
+        Returns:
+            Validated CompanyProfile domain entity for corporate issuers, or None
+            for non-corporate instruments or if corporate profile data is unavailable.
+
+        Raises:
+            InvalidTickerError: If the ticker format is invalid.
+            DataNotFoundError: If the security does not exist.
+            ProviderError: If the provider fails.
         """
         ...

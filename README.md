@@ -6,8 +6,8 @@ AURELIUS is designed as a serious financial research platform demonstrating:
 financial data engineering, market data analysis, fundamental analysis, valuation,
 portfolio analytics, risk analysis, quantitative research, and backtesting.
 
-> **Status**: Milestone 1 — Market Data Infrastructure
-
+> **Status**: Milestone 2 — Security Search & Company Profiles
+ 
 ---
 
 ## Project Structure
@@ -66,7 +66,11 @@ full architecture description.
 
 See [`docs/finance/`](docs/finance/) for the financial concepts handbook.
 This is a living reference document that explains every financial concept, formula,
-and assumption used in the implementation.
+and assumption used in the implementation:
+- [`01-market-basics.md`](docs/finance/01-market-basics.md) — Market microstructure & orders
+- [`02-returns.md`](docs/finance/02-returns.md) — Total return & return calculations
+- [`03-market-data.md`](docs/finance/03-market-data.md) — Market data infrastructure & adjustments
+- [`04-security-and-company-data.md`](docs/finance/04-security-and-company-data.md) — Security identity, listings, & classifications
 
 ## Development Philosophy
 
@@ -80,8 +84,8 @@ before the next begins. Every financial formula is documented, tested, and verif
 | Milestone | Name | Status |
 |---|---|---|
 | 0 | Architecture & Project Foundation | ✅ Complete |
-| 1 | Market Data Infrastructure | 🟡 Implemented (Awaiting Final Audit Approval) |
-| 2 | Security Search & Company Profiles | ⏳ Pending |
+| 1 | Market Data Infrastructure | ✅ Complete |
+| 2 | Security Search & Company Profiles | 🟡 Implemented (Awaiting Final Audit Approval) |
 | 3 | Market Overview | ⏳ Pending |
 | 4 | Historical Market Analysis | ⏳ Pending |
 | 5 | Quantitative Analytics Foundation | ⏳ Pending |

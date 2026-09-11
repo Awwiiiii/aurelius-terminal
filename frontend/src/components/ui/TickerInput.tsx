@@ -6,7 +6,7 @@ interface TickerInputProps {
   isLoading: boolean;
 }
 
-const QUICK_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'SPY', 'QQQ'];
+const QUICK_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'SPY', '^GSPC'];
 
 export const TickerInput: React.FC<TickerInputProps> = ({
   currentTicker,

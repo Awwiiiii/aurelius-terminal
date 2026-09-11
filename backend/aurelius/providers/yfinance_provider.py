@@ -39,6 +39,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 
+from aurelius.domain.entities.company import CompanyProfile
 from aurelius.domain.entities.enums import (
     AssetType,
     Currency,
@@ -47,23 +48,53 @@ from aurelius.domain.entities.enums import (
 )
 from aurelius.domain.entities.ohlcv import OHLCVBar, OHLCVSeries
 from aurelius.domain.entities.quote import Quote
+from aurelius.domain.entities.search import SecuritySearchResult
 from aurelius.domain.entities.security import Security
 from aurelius.domain.errors import (
     DataNotFoundError,
     DataQualityError,
+    InvalidSearchQueryError,
     InvalidTickerError,
     ProviderError,
     ProviderRateLimitError,
     ProviderUnavailableError,
 )
 from aurelius.domain.validation import (
+    validate_company_profile,
     validate_ohlcv_series,
     validate_quote,
+    validate_search_query,
     validate_ticker,
 )
 from aurelius.providers.base import MarketDataProvider
 
 logger = logging.getLogger(__name__)
+
+
+def _map_quote_type(raw_type: str | None) -> AssetType:
+    """
+    Map provider quote type / display type string to canonical AssetType enum.
+    """
+    if not raw_type:
+        return AssetType.UNKNOWN
+    normalized = raw_type.strip().upper()
+    if normalized in ("EQUITY", "COMMON STOCK"):
+        return AssetType.EQUITY
+    if normalized in ("ETF", "ETP", "EXCHANGE TRADED FUND"):
+        return AssetType.ETF
+    if normalized in ("INDEX", "INDICES"):
+        return AssetType.INDEX
+    if normalized in ("MUTUALFUND", "MUTUAL FUND", "FUND"):
+        return AssetType.MUTUAL_FUND
+    if normalized in ("CRYPTOCURRENCY", "CRYPTO"):
+        return AssetType.CRYPTO
+    if normalized in ("CURRENCY", "FX", "FOREX"):
+        return AssetType.CURRENCY
+    if normalized in ("FUTURE", "COMMODITY"):
+        return AssetType.FUTURE
+    if normalized in ("OPTION",):
+        return AssetType.OPTION
+    return AssetType.UNKNOWN
 
 
 def _is_transient_error(exc: Exception) -> bool:
@@ -82,6 +113,7 @@ def _is_transient_error(exc: Exception) -> bool:
         exc,
         (
             InvalidTickerError,
+            InvalidSearchQueryError,
             DataNotFoundError,
             DataQualityError,
             ProviderRateLimitError,
@@ -413,6 +445,11 @@ class YFinanceProvider(MarketDataProvider):
     async def get_security(self, ticker: str) -> Security:
         """
         Retrieve security metadata for a ticker symbol.
+
+        Populates provider-facing listing context (exchange, exchange_display,
+        currency, timezone) along with security identity and asset classification.
+        Missing currency is never defaulted to USD; unknown values remain UNKNOWN.
+        Sector and industry are provider-supplied classifications, not authoritative GICS.
         """
         normalized_ticker = validate_ticker(ticker)
 
@@ -447,35 +484,230 @@ class YFinanceProvider(MarketDataProvider):
                     ticker=normalized_ticker,
                 )
 
-            name = info.get("longName") or info.get("shortName")
-            quote_type = (info.get("quoteType") or "").upper()
-            asset_type = AssetType.UNKNOWN
-            if quote_type == "EQUITY":
-                asset_type = AssetType.EQUITY
-            elif quote_type == "ETF":
-                asset_type = AssetType.ETF
-            elif quote_type == "INDEX":
-                asset_type = AssetType.INDEX
-            elif quote_type == "CRYPTOCURRENCY":
-                asset_type = AssetType.CRYPTO
-            elif quote_type == "MUTUALFUND":
-                asset_type = AssetType.MUTUAL_FUND
+            name = (
+                info.get("longName") or info.get("shortName") or normalized_ticker
+            ).strip()
+            raw_type = info.get("quoteType") or info.get("typeDisp")
+            asset_type = _map_quote_type(raw_type)
 
-            currency_str = (info.get("currency") or "USD").upper()
-            try:
-                currency = Currency(currency_str)
-            except ValueError:
-                currency = Currency.UNKNOWN
+            raw_currency = info.get("currency")
+            currency = Currency.UNKNOWN
+            if raw_currency and isinstance(raw_currency, str):
+                try:
+                    currency = Currency(raw_currency.strip().upper())
+                except ValueError:
+                    currency = Currency.UNKNOWN
+
+            exchange = info.get("exchange")
+            exchange_display = info.get("fullExchangeName") or exchange
+            timezone = info.get("timeZoneFullName") or info.get("exchangeTimezoneName")
 
             return Security(
                 ticker=normalized_ticker,
                 name=name,
                 asset_type=asset_type,
                 currency=currency,
-                exchange=info.get("exchange"),
-                country=info.get("country"),
-                sector=info.get("sector"),
-                industry=info.get("industry"),
+                exchange=str(exchange).strip() if exchange else None,
+                exchange_display=(
+                    str(exchange_display).strip() if exchange_display else None
+                ),
+                timezone=str(timezone).strip() if timezone else None,
+                country=str(info["country"]).strip() if info.get("country") else None,
+                sector=str(info["sector"]).strip() if info.get("sector") else None,
+                industry=(
+                    str(info["industry"]).strip() if info.get("industry") else None
+                ),
+                provider=self.name,
+                fetched_at=datetime.now(UTC),
             )
 
         return await _execute_with_retry(_fetch_security_sync)
+
+    async def search_securities(
+        self, query: str, limit: int = 10
+    ) -> list[SecuritySearchResult]:
+        """
+        Search for securities matching query via yfinance Search API.
+
+        Normalizes results into domain SecuritySearchResult models.
+        If provider search yields no results but the query is a valid ticker format,
+        attempts direct fallback lookup via get_security.
+        Sector and industry are documented as provider-supplied classifications.
+        """
+        cleaned_query = validate_search_query(query)
+        clamped_limit = max(1, min(limit, 50))
+
+        def _search_sync() -> list[SecuritySearchResult]:
+            try:
+                search_obj = yf.Search(cleaned_query, max_results=clamped_limit)
+                raw_quotes = getattr(search_obj, "quotes", []) or []
+            except Exception as exc:
+                if (
+                    isinstance(exc, requests.exceptions.HTTPError)
+                    and exc.response is not None
+                    and exc.response.status_code == 429
+                ):
+                    raise ProviderRateLimitError(
+                        "Rate limit exceeded on Yahoo Finance Search",
+                        provider=self.name,
+                    ) from exc
+                raise ProviderUnavailableError(
+                    f"Failed to execute search query on Yahoo Finance: {exc}",
+                    provider=self.name,
+                ) from exc
+
+            results: list[SecuritySearchResult] = []
+            for q in raw_quotes:
+                if not isinstance(q, dict):
+                    continue
+                symbol = q.get("symbol")
+                if not symbol or not isinstance(symbol, str):
+                    continue
+                name = q.get("shortname") or q.get("longname") or symbol
+                raw_type = q.get("typeDisp") or q.get("quoteType")
+                asset_type = _map_quote_type(raw_type)
+                exchange = q.get("exchange")
+                exchange_disp = q.get("exchDisp") or exchange
+
+                currency = None
+                raw_curr = q.get("currency")
+                if raw_curr and isinstance(raw_curr, str):
+                    try:
+                        currency = Currency(raw_curr.strip().upper())
+                    except ValueError:
+                        currency = Currency.UNKNOWN
+
+                results.append(
+                    SecuritySearchResult(
+                        ticker=symbol.strip().upper(),
+                        name=str(name).strip(),
+                        asset_type=asset_type,
+                        exchange=str(exchange).strip() if exchange else None,
+                        exchange_display=(
+                            str(exchange_disp).strip() if exchange_disp else None
+                        ),
+                        currency=currency,
+                        provider=self.name,
+                    )
+                )
+
+            return results
+
+        results = await _execute_with_retry(_search_sync)
+
+        # Fallback: if search yielded no results, check if the input is a valid direct ticker
+        if not results:
+            try:
+                valid_ticker = validate_ticker(cleaned_query)
+                sec = await self.get_security(valid_ticker)
+                results.append(
+                    SecuritySearchResult(
+                        ticker=sec.ticker,
+                        name=sec.name,
+                        asset_type=sec.asset_type,
+                        exchange=sec.exchange,
+                        exchange_display=sec.exchange_display,
+                        currency=sec.currency,
+                        provider=self.name,
+                    )
+                )
+            except (InvalidTickerError, DataNotFoundError, ProviderError):
+                pass
+
+        return results
+
+    async def get_company_profile(self, ticker: str) -> CompanyProfile | None:
+        """
+        Retrieve corporate identity, sector, industry, and description for an equity.
+
+        Non-corporate instruments (ETFs, Indices, Crypto, Currencies, Futures)
+        return None cleanly, which is valid domain behavior and NOT an error.
+        Sector and industry are provider-supplied classifications, not authoritative GICS.
+        """
+        normalized_ticker = validate_ticker(ticker)
+
+        def _fetch_profile_sync() -> CompanyProfile | None:
+            try:
+                yf_ticker = yf.Ticker(normalized_ticker)
+                info = yf_ticker.info
+            except Exception as exc:
+                if (
+                    isinstance(exc, requests.exceptions.HTTPError)
+                    and exc.response is not None
+                    and exc.response.status_code == 429
+                ):
+                    raise ProviderRateLimitError(
+                        "Rate limit exceeded on Yahoo Finance",
+                        provider=self.name,
+                        ticker=normalized_ticker,
+                    ) from exc
+                raise ProviderUnavailableError(
+                    f"Failed to fetch company profile: {exc}",
+                    provider=self.name,
+                    ticker=normalized_ticker,
+                ) from exc
+
+            if not info:
+                return None
+
+            # Check instrument classification: non-corporate assets return None cleanly
+            raw_type = info.get("quoteType") or info.get("typeDisp")
+            asset_type = _map_quote_type(raw_type)
+            if asset_type in (
+                AssetType.INDEX,
+                AssetType.ETF,
+                AssetType.MUTUAL_FUND,
+                AssetType.CRYPTO,
+                AssetType.CURRENCY,
+                AssetType.FUTURE,
+                AssetType.OPTION,
+            ):
+                return None
+
+            description = info.get("longBusinessSummary")
+            sector = info.get("sector")
+            industry = info.get("industry")
+            website = info.get("website")
+            country = info.get("country")
+            city = info.get("city")
+            state = info.get("state")
+            address = info.get("address1")
+            raw_employees = info.get("fullTimeEmployees")
+
+            # If none of the corporate identity fields are present, this is not a corporate profile
+            if not any([description, sector, industry, website, country, address]):
+                return None
+
+            employees: int | None = None
+            if raw_employees is not None:
+                try:
+                    emp_int = int(raw_employees)
+                    if emp_int >= 0:
+                        employees = emp_int
+                except (ValueError, TypeError):
+                    employees = None
+
+            name = (
+                info.get("longName") or info.get("shortName") or normalized_ticker
+            ).strip()
+
+            profile = CompanyProfile(
+                lookup_ticker=normalized_ticker,
+                company_name=name,
+                legal_name=None,
+                description=str(description).strip() if description else None,
+                sector=str(sector).strip() if sector else None,
+                industry=str(industry).strip() if industry else None,
+                website=str(website).strip() if website else None,
+                country=str(country).strip() if country else None,
+                city=str(city).strip() if city else None,
+                state=str(state).strip() if state else None,
+                address=str(address).strip() if address else None,
+                employees=employees,
+                provider=self.name,
+                fetched_at=datetime.now(UTC),
+            )
+            validate_company_profile(profile)
+            return profile
+
+        return await _execute_with_retry(_fetch_profile_sync)

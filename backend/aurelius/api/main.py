@@ -36,6 +36,7 @@ from aurelius.domain.errors import (
     CalculationError,
     DataNotFoundError,
     DataQualityError,
+    InvalidSearchQueryError,
     InvalidTickerError,
     ProviderRateLimitError,
     ProviderUnavailableError,
@@ -105,6 +106,19 @@ def create_app() -> FastAPI:
                 "error": "INVALID_TICKER",
                 "message": exc.message,
                 "ticker": exc.ticker,
+            },
+        )
+
+    @app.exception_handler(InvalidSearchQueryError)
+    async def invalid_search_query_handler(
+        request: Request, exc: InvalidSearchQueryError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "INVALID_SEARCH_QUERY",
+                "message": exc.message,
+                "query": exc.query,
             },
         )
 

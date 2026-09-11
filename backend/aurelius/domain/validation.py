@@ -10,28 +10,39 @@ Data that fails sanity or quality checks raises domain exceptions from `aurelius
 import re
 from decimal import Decimal
 
+from aurelius.domain.entities.company import CompanyProfile
 from aurelius.domain.entities.ohlcv import OHLCVBar, OHLCVSeries
 from aurelius.domain.entities.quote import Quote
 from aurelius.domain.errors import (
     DataNotFoundError,
     DataQualityError,
+    InvalidSearchQueryError,
     InvalidTickerError,
 )
 
+# Ticker grammar permitting:
+# - Alphanumeric characters (A-Z, 0-9)
+# - '.' and '-' for share classes (BRK.B, BRK-B) and foreign exchanges (AAPL.TO)
+# - '^' for market index benchmarks (^GSPC, ^DJI, ^IXIC, ^VIX)
+# - '=' for continuous futures symbols (ES=F, NQ=F)
 TICKER_REGEX = re.compile(r"^[A-Z0-9.\-=^]{1,12}$")
+
+FORBIDDEN_QUERY_CHARS = re.compile(r"[\x00-\x1f\x7f<>]")
 
 
 def validate_ticker(ticker: str) -> str:
     """
-    Validate and normalize a ticker symbol.
+    Validate and normalize a security ticker symbol.
 
     Normalization:
       - Strips leading/trailing whitespace
       - Converts to uppercase
 
-    Validation:
-      - Must match standard ticker symbol patterns (1-12 chars, alphanumeric,
-        dots, hyphens, carets, or equals signs for futures/indices).
+    Validation grammar (1-12 characters):
+      - Standard symbols: Alphanumeric (e.g. 'AAPL', 'MSFT')
+      - Share classes / foreign listings: '.' and '-' (e.g. 'BRK.B', 'BRK-B', 'AAPL.TO')
+      - Market indices: Caret '^' (e.g. '^GSPC' for S&P 500, '^DJI', '^IXIC')
+      - Futures: Equals '=' (e.g. 'ES=F' for E-mini S&P 500 futures)
 
     Raises:
       InvalidTickerError: If the ticker is empty, malformed, or exceeds length limits.
@@ -59,6 +70,68 @@ def validate_ticker(ticker: str) -> str:
         )
 
     return normalized
+
+
+def validate_search_query(query: str) -> str:
+    """
+    Validate and normalize a freeform security/company search query.
+
+    Distinction from ticker validation:
+      - Search queries support full company names (e.g. 'Apple Inc.', 'Microsoft Technology')
+      - Spaces and case are preserved (spaces collapsed to single spaces)
+      - Does NOT enforce ticker uppercase regex
+
+    Validation:
+      - Query must be a string
+      - Must be non-empty after stripping leading/trailing whitespace
+      - Length: 1 <= len <= 60 characters
+      - Rejects non-printable control characters, null bytes, and script injection (<, >)
+
+    Raises:
+      InvalidSearchQueryError: If query is empty, too long, or contains forbidden characters.
+    """
+    if not isinstance(query, str):
+        raise InvalidSearchQueryError(
+            message=f"Search query must be a string, got {type(query).__name__}",
+            query=str(query),
+        )
+
+    if FORBIDDEN_QUERY_CHARS.search(query):
+        raise InvalidSearchQueryError(
+            message="Search query contains forbidden control or script characters",
+            query=query,
+        )
+
+    # Collapse multiple internal whitespace to single space
+    cleaned = re.sub(r"\s+", " ", query.strip())
+    if not cleaned:
+        raise InvalidSearchQueryError(
+            message="Search query cannot be empty",
+            query=query,
+        )
+
+    if len(cleaned) > 60:
+        raise InvalidSearchQueryError(
+            message=f"Search query exceeds maximum length of 60 characters (got {len(cleaned)})",
+            query=cleaned,
+        )
+
+    return cleaned
+
+
+def validate_company_profile(profile: CompanyProfile) -> None:
+    """
+    Validate company profile invariants.
+
+    Invariants:
+      - Employee count must be non-negative if reported
+    """
+    if profile.employees is not None and profile.employees < 0:
+        raise DataQualityError(
+            message=f"Employee count cannot be negative, got {profile.employees}",
+            check="non_negative_employees",
+            ticker=profile.lookup_ticker,
+        )
 
 
 def validate_ohlcv_bar(bar: OHLCVBar, ticker: str | None = None) -> None:

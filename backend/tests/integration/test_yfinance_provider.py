@@ -77,3 +77,51 @@ async def test_yfinance_nonexistent_ticker() -> None:
             start=date(2024, 1, 2),
             end=date(2024, 1, 5),
         )
+
+
+@pytest.mark.integration
+async def test_yfinance_search_live() -> None:
+    provider = YFinanceProvider()
+    results = await provider.search_securities("Apple", limit=5)
+    assert len(results) >= 1
+    tickers = [r.ticker for r in results]
+    assert "AAPL" in tickers
+
+
+@pytest.mark.integration
+async def test_yfinance_company_profile_live_aapl() -> None:
+    provider = YFinanceProvider()
+    profile = await provider.get_company_profile("AAPL")
+    assert profile is not None
+    assert profile.lookup_ticker == "AAPL"
+    assert "Apple" in profile.company_name
+    assert profile.sector is not None
+    assert profile.website is not None
+    assert profile.employees is not None
+    assert profile.employees > 10000
+
+
+@pytest.mark.integration
+async def test_yfinance_company_profile_live_non_corporate() -> None:
+    provider = YFinanceProvider()
+    # ETF SPY should return None cleanly without error
+    spy_profile = await provider.get_company_profile("SPY")
+    assert spy_profile is None
+
+    # Index ^GSPC should return None cleanly without error
+    gspc_profile = await provider.get_company_profile("^GSPC")
+    assert gspc_profile is None
+
+
+@pytest.mark.integration
+async def test_yfinance_get_security_live_special_tickers() -> None:
+    provider = YFinanceProvider()
+    # ETF
+    spy_sec = await provider.get_security("SPY")
+    assert spy_sec.ticker == "SPY"
+    assert spy_sec.provider == "yahoo_finance"
+
+    # Index
+    gspc_sec = await provider.get_security("^GSPC")
+    assert gspc_sec.ticker == "^GSPC"
+    assert gspc_sec.provider == "yahoo_finance"

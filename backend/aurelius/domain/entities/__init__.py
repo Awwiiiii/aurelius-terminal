@@ -4,13 +4,18 @@ aurelius.domain.entities
 Core financial domain entities for AURELIUS.
 
 Milestone 1 Entities:
-  - Security: Tradable asset metadata
   - Price, PriceChange: Point-in-time price observations using Decimal
   - Quote: Market price snapshot with integer volume
   - OHLCVBar, OHLCVSeries: Historical bar models with unadjusted raw OHLC and provider adj_close
-  - Enums: AssetType, Currency, MarketInterval (restricted to 1d in M1), MarketState
+  - Enums: AssetType, Currency, MarketInterval, MarketState
+
+Milestone 2 Entities:
+  - Security: Tradable asset representation with provider listing context
+  - CompanyProfile: Corporate entity intelligence for operating companies
+  - SecuritySearchResult: Matching item returned from security/company search
 """
 
+from aurelius.domain.entities.company import CompanyProfile
 from aurelius.domain.entities.enums import (
     AssetType,
     Currency,
@@ -20,10 +25,12 @@ from aurelius.domain.entities.enums import (
 from aurelius.domain.entities.ohlcv import OHLCVBar, OHLCVSeries
 from aurelius.domain.entities.price import Price, PriceChange
 from aurelius.domain.entities.quote import Quote
+from aurelius.domain.entities.search import SecuritySearchResult
 from aurelius.domain.entities.security import Security
 
 __all__ = [
     "AssetType",
+    "CompanyProfile",
     "Currency",
     "MarketInterval",
     "MarketState",
@@ -33,4 +40,5 @@ __all__ = [
     "PriceChange",
     "Quote",
     "Security",
+    "SecuritySearchResult",
 ]

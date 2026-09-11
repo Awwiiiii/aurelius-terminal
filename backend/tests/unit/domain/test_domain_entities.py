@@ -148,6 +148,8 @@ def test_security_entity() -> None:
         country="USA",
         sector="Technology",
         industry="Semiconductors",
+        provider="yahoo_finance",
+        fetched_at=datetime.now(UTC),
     )
     assert sec.ticker == "NVDA"
     assert sec.asset_type == AssetType.EQUITY

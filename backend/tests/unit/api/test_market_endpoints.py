@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from aurelius.api.main import create_app
 from aurelius.domain.entities import (
+    CompanyProfile,
     Currency,
     MarketInterval,
     MarketState,
@@ -20,6 +21,7 @@ from aurelius.domain.entities import (
     OHLCVSeries,
     Quote,
     Security,
+    SecuritySearchResult,
 )
 from aurelius.domain.errors import (
     DataNotFoundError,
@@ -116,6 +118,34 @@ class MockMarketDataProvider(MarketDataProvider):
             ticker=ticker,
             name="Mock Company",
             currency=Currency.USD,
+            provider=self.name,
+            fetched_at=datetime.now(UTC),
+        )
+
+    async def search_securities(
+        self, query: str, limit: int = 10
+    ) -> list[SecuritySearchResult]:
+        return [
+            SecuritySearchResult(
+                ticker="AAPL",
+                name="Apple Inc.",
+                exchange="NASDAQ",
+                exchange_display="NASDAQ",
+                provider=self.name,
+            )
+        ]
+
+    async def get_company_profile(self, ticker: str) -> CompanyProfile | None:
+        if ticker == "SPY":
+            return None
+        return CompanyProfile(
+            lookup_ticker=ticker,
+            company_name="Mock Company Inc.",
+            description="A mock company description.",
+            sector="Technology",
+            industry="Consumer Electronics",
+            provider=self.name,
+            fetched_at=datetime.now(UTC),
         )
 
 
