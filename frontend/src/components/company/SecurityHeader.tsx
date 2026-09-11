@@ -4,11 +4,13 @@ import type { SecurityInfoResponse } from '../../types/company';
 interface SecurityHeaderProps {
   security: SecurityInfoResponse;
   website?: string | null;
+  onLaunchHistorical?: (ticker: string) => void;
 }
 
 export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
   security,
   website,
+  onLaunchHistorical,
 }) => {
   return (
     <div className="security-header-panel">
@@ -46,6 +48,16 @@ export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
             >
               Website ↗
             </a>
+          )}
+          {onLaunchHistorical && (
+            <button
+              type="button"
+              className="security-action-tag launch-historical-tag"
+              onClick={() => onLaunchHistorical(security.ticker)}
+              title="Launch full historical market analysis for this security"
+            >
+              ☵ LAUNCH HISTORICAL ANALYSIS
+            </button>
           )}
         </div>
       </div>

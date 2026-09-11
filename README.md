@@ -6,7 +6,7 @@ AURELIUS is designed as a serious financial research platform demonstrating:
 financial data engineering, market data analysis, fundamental analysis, valuation,
 portfolio analytics, risk analysis, quantitative research, and backtesting.
 
-> **Status**: Milestone 2 — Security Search & Company Profiles
+> **Status**: Milestone 4 — Historical Market Analysis
  
 ---
 
@@ -72,6 +72,7 @@ and assumption used in the implementation:
 - [`03-market-data.md`](docs/finance/03-market-data.md) — Market data infrastructure & adjustments
 - [`04-security-and-company-data.md`](docs/finance/04-security-and-company-data.md) — Security identity, listings, & classifications
 - [`05-market-benchmarks-and-indicators.md`](docs/finance/05-market-benchmarks-and-indicators.md) — Market benchmarks, volatility, and telemetry
+- [`06-historical-market-analysis.md`](docs/finance/06-historical-market-analysis.md) — Historical market analysis, drawdowns, CAGR, and volatility
 
 ## Development Philosophy
 
@@ -87,8 +88,8 @@ before the next begins. Every financial formula is documented, tested, and verif
 | 0 | Architecture & Project Foundation | ✅ Complete |
 | 1 | Market Data Infrastructure | ✅ Complete |
 | 2 | Security Search & Company Profiles | ✅ Complete |
-| 3 | Market Overview | 🟡 Implemented (Awaiting Review) |
-| 4 | Historical Market Analysis | ⏳ Pending |
+| 3 | Market Overview | ✅ Complete |
+| 4 | Historical Market Analysis | 🟡 Implemented (Awaiting Review) |
 | 5 | Quantitative Analytics Foundation | ⏳ Pending |
 | 6 | Financial Statement Infrastructure | ⏳ Pending |
 | 7–18 | Further milestones | ⏳ Pending |

@@ -3,8 +3,8 @@ import React from 'react';
 interface AppShellProps {
   children: React.ReactNode;
   headerCenter?: React.ReactNode;
-  activeView?: 'OVERVIEW' | 'RESEARCH';
-  onViewChange?: (view: 'OVERVIEW' | 'RESEARCH') => void;
+  activeView?: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL';
+  onViewChange?: (view: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL') => void;
 }
 
 export const AppShell: React.FC<AppShellProps> = ({
@@ -43,12 +43,20 @@ export const AppShell: React.FC<AppShellProps> = ({
             <span className="mode-btn-icon">⌕</span>
             <span>SECURITY RESEARCH</span>
           </button>
+          <button
+            type="button"
+            className={`mode-switch-btn ${activeView === 'HISTORICAL' ? 'active' : ''}`}
+            onClick={() => onViewChange && onViewChange('HISTORICAL')}
+          >
+            <span className="mode-btn-icon">☵</span>
+            <span>HISTORICAL ANALYSIS</span>
+          </button>
         </div>
 
         {headerCenter && <div className="header-center">{headerCenter}</div>}
 
         <div className="header-meta">
-          <span className="milestone-badge">M3 — MARKET OVERVIEW</span>
+          <span className="milestone-badge">M4 — HISTORICAL ANALYSIS</span>
           <span className="live-status">
             <span className="status-dot"></span>
             SYSTEM ONLINE

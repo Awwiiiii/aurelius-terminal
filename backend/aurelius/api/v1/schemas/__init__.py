@@ -4,6 +4,15 @@ from aurelius.api.v1.schemas.company import (
     SecurityDetailResponse,
     SecurityInfoResponse,
 )
+from aurelius.api.v1.schemas.historical import (
+    BenchmarkComparisonResponse,
+    DrawdownMetricsResponse,
+    HistoricalAnalysisResponse,
+    HistoricalBarPointResponse,
+    HistoricalExtremesResponse,
+    ReturnMetricsResponse,
+    VolatilityMetricsResponse,
+)
 from aurelius.api.v1.schemas.market import (
     OHLCVBarResponse,
     OHLCVResponse,
@@ -21,17 +30,24 @@ from aurelius.api.v1.schemas.search import (
 )
 
 __all__ = [
-    "QuoteResponse",
+    "BenchmarkComparisonResponse",
+    "BenchmarkResponse",
+    "CompanyProfileEndpointResponse",
+    "CompanyProfileResponse",
+    "DrawdownMetricsResponse",
+    "HistoricalAnalysisResponse",
+    "HistoricalBarPointResponse",
+    "HistoricalExtremesResponse",
+    "MarketMoverResponse",
+    "MarketOverviewResponse",
+    "MarketStatusResponse",
     "OHLCVBarResponse",
     "OHLCVResponse",
-    "SecuritySearchResultItem",
-    "SecuritySearchResponse",
-    "CompanyProfileResponse",
-    "SecurityInfoResponse",
+    "QuoteResponse",
+    "ReturnMetricsResponse",
     "SecurityDetailResponse",
-    "CompanyProfileEndpointResponse",
-    "BenchmarkResponse",
-    "MarketMoverResponse",
-    "MarketStatusResponse",
-    "MarketOverviewResponse",
+    "SecurityInfoResponse",
+    "SecuritySearchResponse",
+    "SecuritySearchResultItem",
+    "VolatilityMetricsResponse",
 ]

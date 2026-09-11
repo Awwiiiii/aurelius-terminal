@@ -22,6 +22,16 @@ from aurelius.domain.entities.enums import (
     MarketInterval,
     MarketState,
 )
+from aurelius.domain.entities.historical import (
+    BenchmarkComparison,
+    DrawdownMetrics,
+    HistoricalAnalysisSummary,
+    HistoricalBarPoint,
+    HistoricalExtremes,
+    HistoricalTimeHorizon,
+    ReturnMetrics,
+    VolatilityMetrics,
+)
 from aurelius.domain.entities.market_overview import (
     CANONICAL_BENCHMARKS,
     BenchmarkCategory,
@@ -43,12 +53,18 @@ from aurelius.domain.entities.security import Security
 __all__ = [
     "AssetType",
     "BenchmarkCategory",
+    "BenchmarkComparison",
     "BenchmarkDefinition",
     "BenchmarkSnapshot",
     "CANONICAL_BENCHMARKS",
     "CompanyProfile",
     "Currency",
     "DataFreshness",
+    "DrawdownMetrics",
+    "HistoricalAnalysisSummary",
+    "HistoricalBarPoint",
+    "HistoricalExtremes",
+    "HistoricalTimeHorizon",
     "MarketInterval",
     "MarketMoverItem",
     "MarketOverviewSnapshot",
@@ -61,6 +77,8 @@ __all__ = [
     "Price",
     "PriceChange",
     "Quote",
+    "ReturnMetrics",
     "Security",
     "SecuritySearchResult",
+    "VolatilityMetrics",
 ]

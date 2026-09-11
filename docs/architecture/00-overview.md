@@ -159,6 +159,7 @@ Do not create ADRs for trivial choices.
 - [`decisions/0001-yfinance-as-primary-provider.md`](decisions/0001-yfinance-as-primary-provider.md) — YFinance as Primary Market Data Provider in Milestone 1
 - [`decisions/0002-security-search-and-company-profile-architecture.md`](decisions/0002-security-search-and-company-profile-architecture.md) — Security Search, Identity Context, and Polymorphic Company Profile Architecture
 - [`decisions/0003-market-overview-and-session-telemetry.md`](decisions/0003-market-overview-and-session-telemetry.md) — Market Overview Workspace, Canonical Benchmarks, and Indicative Session Telemetry
+- [`decisions/0004-historical-market-analysis.md`](decisions/0004-historical-market-analysis.md) — Historical Market Analysis Architecture & Quantitative Standards
 
 ---
 
@@ -169,6 +170,7 @@ Do not create ADRs for trivial choices.
 - [`../finance/03-market-data.md`](../finance/03-market-data.md) — Market data infrastructure
 - [`../finance/04-security-and-company-data.md`](../finance/04-security-and-company-data.md) — Security identity & classifications
 - [`../finance/05-market-benchmarks-and-indicators.md`](../finance/05-market-benchmarks-and-indicators.md) — Market benchmarks, volatility, and telemetry
+- [`../finance/06-historical-market-analysis.md`](../finance/06-historical-market-analysis.md) — Historical market analysis, drawdowns, CAGR, and volatility
 - [Backend `pyproject.toml`](../../backend/pyproject.toml) — Dependency justifications
 - [`.env.example`](../../.env.example) — Configuration reference
 

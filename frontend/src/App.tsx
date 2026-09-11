@@ -4,6 +4,7 @@ import { getSecurityDetail } from './api/company';
 import { fetchLast30DaysOHLCV, fetchQuote } from './api/market';
 import { CompanyProfileCard } from './components/company/CompanyProfileCard';
 import { SecurityHeader } from './components/company/SecurityHeader';
+import { HistoricalAnalysisView } from './components/historical/HistoricalAnalysisView';
 import { AppShell } from './components/layout/AppShell';
 import { OHLCVTable } from './components/market/OHLCVTable';
 import { QuoteCard } from './components/market/QuoteCard';
@@ -15,7 +16,9 @@ import type { SecurityDetailResponse } from './types/company';
 import type { OHLCVResponse, QuoteResponse } from './types/market';
 
 export function App() {
-  const [activeView, setActiveView] = useState<'OVERVIEW' | 'RESEARCH'>(
+  const [activeView, setActiveView] = useState<
+    'OVERVIEW' | 'RESEARCH' | 'HISTORICAL'
+  >(
     'OVERVIEW'
   );
   const [ticker, setTicker] = useState<string>('AAPL');
@@ -61,6 +64,11 @@ export function App() {
     setActiveView('RESEARCH');
   };
 
+  const handleLaunchHistorical = (newTicker: string) => {
+    setTicker(newTicker);
+    setActiveView('HISTORICAL');
+  };
+
   return (
     <AppShell
       activeView={activeView}
@@ -69,6 +77,11 @@ export function App() {
     >
       {activeView === 'OVERVIEW' ? (
         <MarketOverviewView onSelectTicker={handleSelectTicker} />
+      ) : activeView === 'HISTORICAL' ? (
+        <HistoricalAnalysisView
+          initialTicker={ticker}
+          onSelectTicker={(s) => setTicker(s)}
+        />
       ) : (
         <>
           <TickerInput
@@ -92,6 +105,7 @@ export function App() {
             <SecurityHeader
               security={securityDetail.security}
               website={securityDetail.company_profile?.website}
+              onLaunchHistorical={handleLaunchHistorical}
             />
           )}
 
