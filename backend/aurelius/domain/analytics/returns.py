@@ -45,6 +45,33 @@ def calculate_simple_daily_returns(prices: list[Decimal]) -> list[Decimal | None
     return returns
 
 
+def calculate_log_daily_returns(prices: list[Decimal]) -> list[Decimal | None]:
+    """
+    Compute daily logarithmic (continuously compounded) returns: r_t = ln(P_t / P_{t-1}).
+
+    The initial observation returns None.
+    Evaluates logarithm in 64-bit float and quantizes result to Decimal('0.00000001').
+    """
+    if not prices:
+        return []
+
+    returns: list[Decimal | None] = [None]
+    for i in range(1, len(prices)):
+        prev = prices[i - 1]
+        curr = prices[i]
+        if prev <= Decimal("0.0") or curr <= Decimal("0.0"):
+            returns.append(Decimal("0.00000000"))
+        else:
+            ratio = float(curr / prev)
+            log_ret = math.log(ratio)
+            returns.append(
+                Decimal(str(round(log_ret, 10))).quantize(
+                    Decimal("0.00000001"), rounding=ROUND_HALF_UP
+                )
+            )
+    return returns
+
+
 def calculate_cumulative_returns(prices: list[Decimal]) -> list[Decimal]:
     """
     Compute compounded cumulative return series from base observation:

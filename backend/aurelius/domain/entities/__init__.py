@@ -46,6 +46,16 @@ from aurelius.domain.entities.market_overview import (
 )
 from aurelius.domain.entities.ohlcv import OHLCVBar, OHLCVSeries
 from aurelius.domain.entities.price import Price, PriceChange
+from aurelius.domain.entities.quantitative import (
+    DescriptiveStatistics,
+    HistogramBin,
+    MultiAssetCorrelationMatrix,
+    PairwiseCorrelation,
+    QuantileDistribution,
+    ReturnDistributionSummary,
+    RollingQuantitativeSeries,
+    RollingStatisticPoint,
+)
 from aurelius.domain.entities.quote import Quote
 from aurelius.domain.entities.search import SecuritySearchResult
 from aurelius.domain.entities.security import Security
@@ -60,7 +70,9 @@ __all__ = [
     "CompanyProfile",
     "Currency",
     "DataFreshness",
+    "DescriptiveStatistics",
     "DrawdownMetrics",
+    "HistogramBin",
     "HistoricalAnalysisSummary",
     "HistoricalBarPoint",
     "HistoricalExtremes",
@@ -72,12 +84,18 @@ __all__ = [
     "MarketState",
     "MarketStatus",
     "MoverCategory",
+    "MultiAssetCorrelationMatrix",
     "OHLCVBar",
     "OHLCVSeries",
+    "PairwiseCorrelation",
     "Price",
     "PriceChange",
+    "QuantileDistribution",
     "Quote",
+    "ReturnDistributionSummary",
     "ReturnMetrics",
+    "RollingQuantitativeSeries",
+    "RollingStatisticPoint",
     "Security",
     "SecuritySearchResult",
     "VolatilityMetrics",

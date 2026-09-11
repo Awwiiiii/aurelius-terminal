@@ -9,6 +9,7 @@ import { AppShell } from './components/layout/AppShell';
 import { OHLCVTable } from './components/market/OHLCVTable';
 import { QuoteCard } from './components/market/QuoteCard';
 import { MarketOverviewView } from './components/overview/MarketOverviewView';
+import { QuantitativeView } from './components/quantitative/QuantitativeView';
 import { SearchBar } from './components/search/SearchBar';
 import { ErrorMessage } from './components/ui/ErrorMessage';
 import { TickerInput } from './components/ui/TickerInput';
@@ -17,10 +18,8 @@ import type { OHLCVResponse, QuoteResponse } from './types/market';
 
 export function App() {
   const [activeView, setActiveView] = useState<
-    'OVERVIEW' | 'RESEARCH' | 'HISTORICAL'
-  >(
-    'OVERVIEW'
-  );
+    'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE'
+  >('OVERVIEW');
   const [ticker, setTicker] = useState<string>('AAPL');
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
   const [ohlcv, setOhlcv] = useState<OHLCVResponse | null>(null);
@@ -69,6 +68,11 @@ export function App() {
     setActiveView('HISTORICAL');
   };
 
+  const handleLaunchQuantitative = (newTicker: string) => {
+    setTicker(newTicker);
+    setActiveView('QUANTITATIVE');
+  };
+
   return (
     <AppShell
       activeView={activeView}
@@ -79,6 +83,11 @@ export function App() {
         <MarketOverviewView onSelectTicker={handleSelectTicker} />
       ) : activeView === 'HISTORICAL' ? (
         <HistoricalAnalysisView
+          initialTicker={ticker}
+          onSelectTicker={(s) => setTicker(s)}
+        />
+      ) : activeView === 'QUANTITATIVE' ? (
+        <QuantitativeView
           initialTicker={ticker}
           onSelectTicker={(s) => setTicker(s)}
         />
@@ -106,6 +115,7 @@ export function App() {
               security={securityDetail.security}
               website={securityDetail.company_profile?.website}
               onLaunchHistorical={handleLaunchHistorical}
+              onLaunchQuantitative={handleLaunchQuantitative}
             />
           )}
 

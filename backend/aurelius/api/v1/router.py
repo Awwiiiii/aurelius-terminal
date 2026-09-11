@@ -25,6 +25,7 @@ from aurelius.api.v1.company import router as company_router
 from aurelius.api.v1.historical import router as historical_router
 from aurelius.api.v1.market import router as market_router
 from aurelius.api.v1.overview import router as overview_router
+from aurelius.api.v1.quantitative import router as quantitative_router
 from aurelius.api.v1.search import router as search_router
 from aurelius.settings import get_settings
 
@@ -34,6 +35,7 @@ router = APIRouter()
 router.include_router(market_router)
 router.include_router(overview_router)
 router.include_router(historical_router)
+router.include_router(quantitative_router)
 router.include_router(search_router)
 router.include_router(company_router)
 

@@ -5,12 +5,14 @@ interface SecurityHeaderProps {
   security: SecurityInfoResponse;
   website?: string | null;
   onLaunchHistorical?: (ticker: string) => void;
+  onLaunchQuantitative?: (ticker: string) => void;
 }
 
 export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
   security,
   website,
   onLaunchHistorical,
+  onLaunchQuantitative,
 }) => {
   return (
     <div className="security-header-panel">
@@ -56,7 +58,17 @@ export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
               onClick={() => onLaunchHistorical(security.ticker)}
               title="Launch full historical market analysis for this security"
             >
-              ☵ LAUNCH HISTORICAL ANALYSIS
+              ☵ HISTORICAL
+            </button>
+          )}
+          {onLaunchQuantitative && (
+            <button
+              type="button"
+              className="security-action-tag launch-quantitative-tag"
+              onClick={() => onLaunchQuantitative(security.ticker)}
+              title="Launch quantitative return distribution and risk analytics for this security"
+            >
+              ⨀ QUANTITATIVE
             </button>
           )}
         </div>
