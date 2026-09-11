@@ -7,6 +7,7 @@ import { SecurityHeader } from './components/company/SecurityHeader';
 import { AppShell } from './components/layout/AppShell';
 import { OHLCVTable } from './components/market/OHLCVTable';
 import { QuoteCard } from './components/market/QuoteCard';
+import { MarketOverviewView } from './components/overview/MarketOverviewView';
 import { SearchBar } from './components/search/SearchBar';
 import { ErrorMessage } from './components/ui/ErrorMessage';
 import { TickerInput } from './components/ui/TickerInput';
@@ -14,6 +15,9 @@ import type { SecurityDetailResponse } from './types/company';
 import type { OHLCVResponse, QuoteResponse } from './types/market';
 
 export function App() {
+  const [activeView, setActiveView] = useState<'OVERVIEW' | 'RESEARCH'>(
+    'OVERVIEW'
+  );
   const [ticker, setTicker] = useState<string>('AAPL');
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
   const [ohlcv, setOhlcv] = useState<OHLCVResponse | null>(null);
@@ -47,51 +51,64 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    loadData(ticker);
-  }, [ticker, loadData]);
+    if (activeView === 'RESEARCH') {
+      loadData(ticker);
+    }
+  }, [ticker, activeView, loadData]);
 
   const handleSelectTicker = (newTicker: string) => {
     setTicker(newTicker);
+    setActiveView('RESEARCH');
   };
 
   return (
     <AppShell
+      activeView={activeView}
+      onViewChange={setActiveView}
       headerCenter={<SearchBar onSelectTicker={handleSelectTicker} />}
     >
-      <TickerInput
-        key={ticker}
-        currentTicker={ticker}
-        onSelectTicker={handleSelectTicker}
-        isLoading={isLoading}
-      />
+      {activeView === 'OVERVIEW' ? (
+        <MarketOverviewView onSelectTicker={handleSelectTicker} />
+      ) : (
+        <>
+          <TickerInput
+            key={ticker}
+            currentTicker={ticker}
+            onSelectTicker={handleSelectTicker}
+            isLoading={isLoading}
+          />
 
-      {error && <ErrorMessage error={error} onRetry={() => loadData(ticker)} />}
+          {error && (
+            <ErrorMessage error={error} onRetry={() => loadData(ticker)} />
+          )}
 
-      {isLoading && !quote && (
-        <div className="loading-state">
-          LOADING FINANCIAL DATA & PROFILE FOR {ticker}...
-        </div>
-      )}
+          {isLoading && !quote && (
+            <div className="loading-state">
+              LOADING FINANCIAL DATA &amp; PROFILE FOR {ticker}...
+            </div>
+          )}
 
-      {securityDetail && (
-        <SecurityHeader
-          security={securityDetail.security}
-          website={securityDetail.company_profile?.website}
-        />
-      )}
+          {securityDetail && (
+            <SecurityHeader
+              security={securityDetail.security}
+              website={securityDetail.company_profile?.website}
+            />
+          )}
 
-      {quote && <QuoteCard quote={quote} />}
+          {quote && <QuoteCard quote={quote} />}
 
-      {securityDetail && (
-        <CompanyProfileCard
-          security={securityDetail.security}
-          profile={securityDetail.company_profile ?? null}
-          isOperatingCompany={securityDetail.is_operating_company}
-        />
-      )}
+          {securityDetail && (
+            <CompanyProfileCard
+              security={securityDetail.security}
+              profile={securityDetail.company_profile ?? null}
+              isOperatingCompany={securityDetail.is_operating_company}
+            />
+          )}
 
-      {ohlcv && ohlcv.bars && ohlcv.bars.length > 0 && (
-        <OHLCVTable series={ohlcv} />
+          {ohlcv && ohlcv.bars && ohlcv.bars.length > 0 && (
+            <OHLCVTable series={ohlcv} />
+          )}
+        </>
       )}
     </AppShell>
   );

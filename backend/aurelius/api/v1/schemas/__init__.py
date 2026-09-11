@@ -9,6 +9,12 @@ from aurelius.api.v1.schemas.market import (
     OHLCVResponse,
     QuoteResponse,
 )
+from aurelius.api.v1.schemas.overview import (
+    BenchmarkResponse,
+    MarketMoverResponse,
+    MarketOverviewResponse,
+    MarketStatusResponse,
+)
 from aurelius.api.v1.schemas.search import (
     SecuritySearchResponse,
     SecuritySearchResultItem,
@@ -24,4 +30,8 @@ __all__ = [
     "SecurityInfoResponse",
     "SecurityDetailResponse",
     "CompanyProfileEndpointResponse",
+    "BenchmarkResponse",
+    "MarketMoverResponse",
+    "MarketStatusResponse",
+    "MarketOverviewResponse",
 ]

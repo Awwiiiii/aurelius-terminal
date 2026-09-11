@@ -34,6 +34,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -45,6 +46,14 @@ from aurelius.domain.entities.enums import (
     Currency,
     MarketInterval,
     MarketState,
+)
+from aurelius.domain.entities.market_overview import (
+    CANONICAL_BENCHMARKS,
+    BenchmarkSnapshot,
+    MarketMoverItem,
+    MarketSessionState,
+    MarketStatus,
+    MoverCategory,
 )
 from aurelius.domain.entities.ohlcv import OHLCVBar, OHLCVSeries
 from aurelius.domain.entities.quote import Quote
@@ -95,6 +104,18 @@ def _map_quote_type(raw_type: str | None) -> AssetType:
     if normalized in ("OPTION",):
         return AssetType.OPTION
     return AssetType.UNKNOWN
+
+
+BENCHMARK_PROVIDER_MAPPING: dict[str, str] = {
+    "SP500": "^GSPC",
+    "DOW": "^DJI",
+    "NASDAQ": "^IXIC",
+    "RUSSELL2000": "^RUT",
+    "VIX": "^VIX",
+}
+PROVIDER_BENCHMARK_MAPPING: dict[str, str] = {
+    v: k for k, v in BENCHMARK_PROVIDER_MAPPING.items()
+}
 
 
 def _is_transient_error(exc: Exception) -> bool:
@@ -711,3 +732,335 @@ class YFinanceProvider(MarketDataProvider):
             return profile
 
         return await _execute_with_retry(_fetch_profile_sync)
+
+    async def get_market_status(self, region: str = "US") -> MarketStatus:
+        """
+        Retrieve current operational session telemetry for a market region.
+
+        Safe Fallback Policy:
+          1. Queries yf.Market(region).status.
+          2. If provider fails or returns unverified status on a weekday,
+             returns MarketSessionState.UNKNOWN (never asserts REGULAR_OPEN
+             without holiday calendar verification).
+          3. If weekend (Saturday/Sunday) in market timezone, returns WEEKEND.
+        """
+
+        def _fetch_status_sync() -> MarketStatus:
+            ny_tz = ZoneInfo("America/New_York")
+            now_ny = datetime.now(ny_tz)
+            is_weekend = now_ny.weekday() in (5, 6)
+
+            try:
+                m = yf.Market(region)
+                status_dict = m.status if hasattr(m, "status") else {}
+                raw_status = (status_dict.get("status") or "").strip().lower()
+                message = status_dict.get("message")
+                next_open = status_dict.get("open")
+                next_close = status_dict.get("close")
+
+                tz_raw = status_dict.get("timezone")
+                tz_str = "America/New_York"
+                if isinstance(tz_raw, dict) and "$text" in tz_raw:
+                    tz_str = tz_raw["$text"]
+                elif isinstance(tz_raw, str):
+                    tz_str = tz_raw
+
+                if raw_status == "open":
+                    session_state = MarketSessionState.REGULAR_OPEN
+                elif raw_status in ("pre", "pre-market", "pre_market"):
+                    session_state = MarketSessionState.PRE_MARKET
+                elif raw_status in (
+                    "post",
+                    "post-market",
+                    "post_market",
+                    "after-hours",
+                    "after",
+                ):
+                    session_state = MarketSessionState.AFTER_HOURS
+                elif raw_status == "closed":
+                    session_state = (
+                        MarketSessionState.WEEKEND
+                        if is_weekend
+                        else MarketSessionState.CLOSED
+                    )
+                else:
+                    if is_weekend:
+                        session_state = MarketSessionState.WEEKEND
+                    else:
+                        session_state = MarketSessionState.UNKNOWN
+
+                return MarketStatus(
+                    region=region,
+                    session_state=session_state,
+                    exchange_timezone=tz_str,
+                    session_message=str(message) if message else None,
+                    next_open=next_open if isinstance(next_open, datetime) else None,
+                    next_close=next_close if isinstance(next_close, datetime) else None,
+                    is_indicative=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Error fetching market session telemetry from provider: %s. Falling back to safe session hierarchy.",
+                    exc,
+                )
+                if is_weekend:
+                    return MarketStatus(
+                        region=region,
+                        session_state=MarketSessionState.WEEKEND,
+                        exchange_timezone="America/New_York",
+                        session_message="Markets closed for weekend.",
+                        is_indicative=True,
+                    )
+                return MarketStatus(
+                    region=region,
+                    session_state=MarketSessionState.UNKNOWN,
+                    exchange_timezone="America/New_York",
+                    session_message="Operational session unverified (holiday calendar unavailable).",
+                    is_indicative=True,
+                )
+
+        return await _execute_with_retry(_fetch_status_sync)
+
+    async def get_benchmarks(
+        self, benchmark_ids: list[str] | None = None
+    ) -> list[BenchmarkSnapshot]:
+        """
+        Retrieve performance snapshots for canonical market benchmarks.
+        """
+
+        def _fetch_benchmarks_sync() -> list[BenchmarkSnapshot]:
+            target_ids = benchmark_ids or list(CANONICAL_BENCHMARKS.keys())
+            symbols_to_fetch = [
+                (b_id, BENCHMARK_PROVIDER_MAPPING[b_id])
+                for b_id in target_ids
+                if b_id in BENCHMARK_PROVIDER_MAPPING and b_id in CANONICAL_BENCHMARKS
+            ]
+            if not symbols_to_fetch:
+                return []
+
+            symbols_str = " ".join([sym for _, sym in symbols_to_fetch])
+            tickers_obj = yf.Tickers(symbols_str)
+            snapshots: list[BenchmarkSnapshot] = []
+            now_utc = datetime.now(UTC)
+
+            for b_id, sym in symbols_to_fetch:
+                canon_def = CANONICAL_BENCHMARKS[b_id]
+                t_obj = tickers_obj.tickers.get(sym)
+                if not t_obj:
+                    continue
+
+                fast_info = getattr(t_obj, "fast_info", None)
+                last_price_raw = None
+                prev_close_raw = None
+                day_high_raw = None
+                day_low_raw = None
+
+                if fast_info:
+                    last_price_raw = getattr(fast_info, "last_price", None)
+                    prev_close_raw = getattr(
+                        fast_info, "previous_close", None
+                    ) or getattr(fast_info, "regular_market_previous_close", None)
+                    day_high_raw = getattr(fast_info, "day_high", None)
+                    day_low_raw = getattr(fast_info, "day_low", None)
+
+                if last_price_raw is None:
+                    try:
+                        info = t_obj.info or {}
+                        last_price_raw = info.get("regularMarketPrice") or info.get(
+                            "currentPrice"
+                        )
+                        prev_close_raw = prev_close_raw or info.get(
+                            "regularMarketPreviousClose"
+                        )
+                        day_high_raw = day_high_raw or info.get("regularMarketDayHigh")
+                        day_low_raw = day_low_raw or info.get("regularMarketDayLow")
+                    except Exception:
+                        pass
+
+                if last_price_raw is None:
+                    logger.warning(
+                        "Could not obtain price for benchmark %s (%s)", b_id, sym
+                    )
+                    continue
+
+                try:
+                    price = Decimal(str(last_price_raw))
+                except Exception:
+                    continue
+
+                prev_close: Decimal | None = None
+                if prev_close_raw is not None:
+                    try:
+                        prev_close = Decimal(str(prev_close_raw))
+                    except Exception:
+                        prev_close = None
+
+                day_high: Decimal | None = None
+                if day_high_raw is not None:
+                    try:
+                        day_high = Decimal(str(day_high_raw))
+                    except Exception:
+                        day_high = None
+
+                day_low: Decimal | None = None
+                if day_low_raw is not None:
+                    try:
+                        day_low = Decimal(str(day_low_raw))
+                    except Exception:
+                        day_low = None
+
+                if prev_close is not None and prev_close > 0:
+                    change = price - prev_close
+                    change_percent = (change / prev_close) * Decimal("100")
+                else:
+                    change = Decimal("0")
+                    change_percent = Decimal("0")
+
+                if b_id == "VIX":
+                    currency = Currency.UNKNOWN
+                    is_currency_priced = False
+                else:
+                    currency = Currency.USD
+                    is_currency_priced = True
+
+                snapshots.append(
+                    BenchmarkSnapshot(
+                        benchmark_id=b_id,
+                        name=canon_def.name,
+                        category=canon_def.category,
+                        provider_ticker=sym,
+                        price=price,
+                        change=change,
+                        change_percent=change_percent,
+                        previous_close=prev_close,
+                        day_high=day_high,
+                        day_low=day_low,
+                        currency=currency,
+                        is_currency_priced=is_currency_priced,
+                        provider=self.name,
+                        timestamp=now_utc,
+                    )
+                )
+            return snapshots
+
+        return await _execute_with_retry(_fetch_benchmarks_sync)
+
+    async def get_market_movers(
+        self, category: MoverCategory, count: int = 10
+    ) -> list[MarketMoverItem]:
+        """
+        Retrieve top market movers for a specified category (GAINERS, LOSERS, ACTIVE).
+
+        Strict Semantics:
+          - Volume missing from provider is None, never defaulted to 0.
+          - Market cap is provider-reported marketCap or None. Never calculated.
+          - Filters (price >= $2.00, volume >= 100k for gainers/losers) are presentation
+            filters; missing volume is not dropped.
+        """
+
+        def _fetch_movers_sync() -> list[MarketMoverItem]:
+            category_screen_map = {
+                MoverCategory.GAINERS: "day_gainers",
+                MoverCategory.LOSERS: "day_losers",
+                MoverCategory.ACTIVE: "most_actives",
+            }
+            screen_key = category_screen_map.get(category)
+            if not screen_key:
+                return []
+
+            fetch_count = count + 20
+            try:
+                screen_res = yf.screen(screen_key, count=fetch_count)
+            except Exception as exc:
+                raise ProviderError(
+                    provider=self.name,
+                    message=f"Failed to fetch market screen for {screen_key}: {exc}",
+                ) from exc
+
+            raw_quotes = []
+            if isinstance(screen_res, dict):
+                raw_quotes = screen_res.get("quotes", [])
+
+            movers: list[MarketMoverItem] = []
+            seen_tickers: set[str] = set()
+
+            for q in raw_quotes:
+                raw_sym = q.get("symbol")
+                if not raw_sym:
+                    continue
+                sym = raw_sym.strip().upper()
+                if sym in seen_tickers:
+                    continue
+
+                price_raw = q.get("regularMarketPrice")
+                if price_raw is None:
+                    continue
+
+                try:
+                    price = Decimal(str(price_raw))
+                except Exception:
+                    continue
+
+                change_raw = q.get("regularMarketChange")
+                change_percent_raw = q.get("regularMarketChangePercent")
+                prev_close_raw = q.get("regularMarketPreviousClose")
+                volume_raw = q.get("regularMarketVolume")
+                market_cap_raw = q.get("marketCap")
+
+                change = (
+                    Decimal(str(change_raw)) if change_raw is not None else Decimal("0")
+                )
+                change_percent = (
+                    Decimal(str(change_percent_raw))
+                    if change_percent_raw is not None
+                    else Decimal("0")
+                )
+                prev_close = (
+                    Decimal(str(prev_close_raw)) if prev_close_raw is not None else None
+                )
+
+                volume: int | None = None
+                if volume_raw is not None:
+                    try:
+                        volume = int(volume_raw)
+                    except (ValueError, TypeError):
+                        volume = None
+
+                market_cap: Decimal | None = None
+                if market_cap_raw is not None:
+                    try:
+                        market_cap = Decimal(str(market_cap_raw))
+                    except Exception:
+                        market_cap = None
+
+                if category in (MoverCategory.GAINERS, MoverCategory.LOSERS):
+                    if price < Decimal("2.00"):
+                        continue
+                    if volume is not None and volume < 100000:
+                        continue
+
+                name = (q.get("shortName") or q.get("longName") or sym).strip()
+
+                exchange = q.get("exchange")
+
+                item = MarketMoverItem(
+                    ticker=sym,
+                    name=name,
+                    price=price,
+                    change=change,
+                    change_percent=change_percent,
+                    previous_close=prev_close,
+                    volume=volume,
+                    market_cap=market_cap,
+                    exchange=str(exchange) if exchange else None,
+                    category=category,
+                )
+                seen_tickers.add(sym)
+                movers.append(item)
+
+                if len(movers) >= count:
+                    break
+
+            return movers
+
+        return await _execute_with_retry(_fetch_movers_sync)

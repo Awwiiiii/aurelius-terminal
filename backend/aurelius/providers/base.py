@@ -17,6 +17,12 @@ from datetime import date
 
 from aurelius.domain.entities.company import CompanyProfile
 from aurelius.domain.entities.enums import MarketInterval
+from aurelius.domain.entities.market_overview import (
+    BenchmarkSnapshot,
+    MarketMoverItem,
+    MarketStatus,
+    MoverCategory,
+)
 from aurelius.domain.entities.ohlcv import OHLCVSeries
 from aurelius.domain.entities.quote import Quote
 from aurelius.domain.entities.search import SecuritySearchResult
@@ -149,5 +155,59 @@ class MarketDataProvider(ABC):
             InvalidTickerError: If the ticker format is invalid.
             DataNotFoundError: If the security does not exist.
             ProviderError: If the provider fails.
+        """
+        ...
+
+    @abstractmethod
+    async def get_market_status(self, region: str = "US") -> MarketStatus:
+        """
+        Retrieve current operational session telemetry for a market region.
+
+        Args:
+            region: Market region code (default "US").
+
+        Returns:
+            Validated MarketStatus domain entity.
+
+        Raises:
+            ProviderError: If the provider fails or is unreachable.
+        """
+        ...
+
+    @abstractmethod
+    async def get_benchmarks(
+        self, benchmark_ids: list[str] | None = None
+    ) -> list[BenchmarkSnapshot]:
+        """
+        Retrieve performance snapshots for canonical market benchmarks.
+
+        Args:
+            benchmark_ids: Optional list of canonical benchmark identifiers
+                (e.g. ['SP500', 'VIX']). If None, returns all canonical benchmarks.
+
+        Returns:
+            List of validated BenchmarkSnapshot domain entities.
+
+        Raises:
+            ProviderError: If the provider fails or is unreachable.
+        """
+        ...
+
+    @abstractmethod
+    async def get_market_movers(
+        self, category: MoverCategory, count: int = 10
+    ) -> list[MarketMoverItem]:
+        """
+        Retrieve top market movers for a specified category (GAINERS, LOSERS, ACTIVE).
+
+        Args:
+            category: Mover ranking category.
+            count: Number of movers to retrieve (default 10).
+
+        Returns:
+            List of validated MarketMoverItem domain entities.
+
+        Raises:
+            ProviderError: If the provider fails or is unreachable.
         """
         ...

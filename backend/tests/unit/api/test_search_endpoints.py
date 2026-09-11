@@ -17,10 +17,15 @@ from fastapi.testclient import TestClient
 from aurelius.api.main import create_app
 from aurelius.domain.entities import (
     AssetType,
+    BenchmarkSnapshot,
     CompanyProfile,
     Currency,
     MarketInterval,
+    MarketMoverItem,
+    MarketSessionState,
     MarketState,
+    MarketStatus,
+    MoverCategory,
     OHLCVBar,
     OHLCVSeries,
     Quote,
@@ -166,6 +171,23 @@ class MockSearchMarketDataProvider(MarketDataProvider):
             provider=self.name,
             fetched_at=datetime.now(UTC),
         )
+
+    async def get_market_status(self, region: str = "US") -> MarketStatus:
+        return MarketStatus(
+            region=region,
+            session_state=MarketSessionState.REGULAR_OPEN,
+            is_indicative=True,
+        )
+
+    async def get_benchmarks(
+        self, benchmark_ids: list[str] | None = None
+    ) -> list[BenchmarkSnapshot]:
+        return []
+
+    async def get_market_movers(
+        self, category: MoverCategory, count: int = 10
+    ) -> list[MarketMoverItem]:
+        return []
 
 
 @pytest.fixture

@@ -71,6 +71,7 @@ and assumption used in the implementation:
 - [`02-returns.md`](docs/finance/02-returns.md) — Total return & return calculations
 - [`03-market-data.md`](docs/finance/03-market-data.md) — Market data infrastructure & adjustments
 - [`04-security-and-company-data.md`](docs/finance/04-security-and-company-data.md) — Security identity, listings, & classifications
+- [`05-market-benchmarks-and-indicators.md`](docs/finance/05-market-benchmarks-and-indicators.md) — Market benchmarks, volatility, and telemetry
 
 ## Development Philosophy
 
@@ -85,8 +86,8 @@ before the next begins. Every financial formula is documented, tested, and verif
 |---|---|---|
 | 0 | Architecture & Project Foundation | ✅ Complete |
 | 1 | Market Data Infrastructure | ✅ Complete |
-| 2 | Security Search & Company Profiles | 🟡 Implemented (Awaiting Final Audit Approval) |
-| 3 | Market Overview | ⏳ Pending |
+| 2 | Security Search & Company Profiles | ✅ Complete |
+| 3 | Market Overview | 🟡 Implemented (Awaiting Review) |
 | 4 | Historical Market Analysis | ⏳ Pending |
 | 5 | Quantitative Analytics Foundation | ⏳ Pending |
 | 6 | Financial Statement Infrastructure | ⏳ Pending |

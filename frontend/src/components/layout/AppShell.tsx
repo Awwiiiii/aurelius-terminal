@@ -3,9 +3,16 @@ import React from 'react';
 interface AppShellProps {
   children: React.ReactNode;
   headerCenter?: React.ReactNode;
+  activeView?: 'OVERVIEW' | 'RESEARCH';
+  onViewChange?: (view: 'OVERVIEW' | 'RESEARCH') => void;
 }
 
-export const AppShell: React.FC<AppShellProps> = ({ children, headerCenter }) => {
+export const AppShell: React.FC<AppShellProps> = ({
+  children,
+  headerCenter,
+  activeView = 'OVERVIEW',
+  onViewChange,
+}) => {
   return (
     <div className="terminal-container">
       <header className="terminal-header">
@@ -13,14 +20,35 @@ export const AppShell: React.FC<AppShellProps> = ({ children, headerCenter }) =>
           <span className="brand-mark">◈</span>
           <div>
             <h1 className="brand-title">AURELIUS</h1>
-            <span className="brand-subtitle">Financial Intelligence & Research Terminal</span>
+            <span className="brand-subtitle">
+              Financial Intelligence &amp; Research Terminal
+            </span>
           </div>
+        </div>
+
+        <div className="workspace-mode-switch">
+          <button
+            type="button"
+            className={`mode-switch-btn ${activeView === 'OVERVIEW' ? 'active' : ''}`}
+            onClick={() => onViewChange && onViewChange('OVERVIEW')}
+          >
+            <span className="mode-btn-icon">◈</span>
+            <span>MARKET OVERVIEW</span>
+          </button>
+          <button
+            type="button"
+            className={`mode-switch-btn ${activeView === 'RESEARCH' ? 'active' : ''}`}
+            onClick={() => onViewChange && onViewChange('RESEARCH')}
+          >
+            <span className="mode-btn-icon">⌕</span>
+            <span>SECURITY RESEARCH</span>
+          </button>
         </div>
 
         {headerCenter && <div className="header-center">{headerCenter}</div>}
 
         <div className="header-meta">
-          <span className="milestone-badge">M2 — SEARCH & PROFILES</span>
+          <span className="milestone-badge">M3 — MARKET OVERVIEW</span>
           <span className="live-status">
             <span className="status-dot"></span>
             SYSTEM ONLINE

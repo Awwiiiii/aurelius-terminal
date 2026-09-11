@@ -53,7 +53,30 @@ export function formatVolume(volume: number | null | undefined): string {
   return new Intl.NumberFormat('en-US').format(Math.round(volume));
 }
 
+export function formatMarketCap(
+  marketCap: string | number | null | undefined
+): string {
+  if (marketCap === null || marketCap === undefined || marketCap === '') {
+    return '—';
+  }
+  const num = typeof marketCap === 'string' ? parseFloat(marketCap) : marketCap;
+  if (isNaN(num)) {
+    return String(marketCap);
+  }
+  if (num >= 1e12) {
+    return `$${(num / 1e12).toFixed(2)}T`;
+  }
+  if (num >= 1e9) {
+    return `$${(num / 1e9).toFixed(2)}B`;
+  }
+  if (num >= 1e6) {
+    return `$${(num / 1e6).toFixed(2)}M`;
+  }
+  return `$${new Intl.NumberFormat('en-US').format(Math.round(num))}`;
+}
+
 export function formatDate(dateStr: string): string {
   if (!dateStr) return '—';
   return dateStr;
 }
+
