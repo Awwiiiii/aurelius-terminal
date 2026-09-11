@@ -1,0 +1,83 @@
+# =============================================================================
+# AURELIUS — .gitignore
+# =============================================================================
+# This file protects secrets, generated artifacts, runtime caches, and
+# environment-specific files from being committed to version control.
+# =============================================================================
+
+# --- Secrets & Environment ---------------------------------------------------
+# CRITICAL: .env contains real API keys. Never commit it.
+.env
+*.env
+!.env.example
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+.Python
+
+# Virtual environments (uv creates .venv by default)
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ruff
+.ruff_cache/
+
+# uv
+# uv.lock is intentionally committed (pinned dependency graph)
+
+# --- Database ----------------------------------------------------------------
+# Development SQLite databases are not committed.
+# Schema is managed via Alembic migrations.
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Node / Frontend ---------------------------------------------------------
+node_modules/
+frontend/dist/
+frontend/.vite/
+.eslintcache
+
+# --- IDE / Editor ------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Logs -------------------------------------------------------------------
+*.log
+logs/
+
+# --- OS Artifacts ------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride

@@ -1,0 +1,123 @@
+# =============================================================================
+# AURELIUS — Backend pyproject.toml
+# Managed by uv (https://docs.astral.sh/uv/)
+# =============================================================================
+# Dependency policy:
+#   - Only add a dependency when the current milestone explicitly requires it.
+#   - Document WHY each dependency is included.
+#   - Do not install future-milestone dependencies prematurely.
+# =============================================================================
+
+[project]
+name = "aurelius"
+version = "0.1.0"
+description = "AURELIUS — Financial Intelligence & Research Terminal (backend)"
+authors = [
+    { name = "Aurelius Dev", email = "aurelius@local" },
+]
+requires-python = ">=3.12"
+
+# ---------------------------------------------------------------------------
+# Runtime dependencies — Milestone 0 scaffold only
+# ---------------------------------------------------------------------------
+dependencies = [
+    # FastAPI: Async-first API framework with auto OpenAPI docs.
+    # Pydantic v2 is a required sub-dependency of FastAPI.
+    "fastapi>=0.115",
+
+    # Uvicorn: ASGI server to run FastAPI locally.
+    # [standard] includes uvloop and httptools for better performance.
+    "uvicorn[standard]>=0.34",
+
+    # pydantic-settings: Reads configuration from .env files and environment
+    # variables. Validates types at startup, raising clear errors for missing
+    # required keys.
+    "pydantic-settings>=2.7",
+
+    # httpx: Async HTTP client used to call external data provider APIs.
+    # Preferred over requests because FastAPI is async-first.
+    "httpx>=0.28",
+]
+
+# ---------------------------------------------------------------------------
+# Development dependencies — testing, linting, type checking
+# ---------------------------------------------------------------------------
+[dependency-groups]
+dev = [
+    # pytest: Standard Python test runner.
+    "pytest>=8.3",
+
+    # pytest-asyncio: Enables async test functions for testing FastAPI routes
+    # and async provider clients.
+    "pytest-asyncio>=0.25",
+
+    # httpx is also used in tests via FastAPI's TestClient (async mode).
+    # Already listed in runtime deps, so not repeated here.
+
+    # ruff: Extremely fast Python linter and formatter.
+    # Replaces flake8, isort, pyupgrade, and black in a single tool.
+    "ruff>=0.9",
+
+    # mypy: Static type checker. Enforces type annotations.
+    # Run strictly on the domain layer; relax for infrastructure/API where
+    # dynamic patterns are necessary.
+    "mypy>=1.14",
+]
+
+# ---------------------------------------------------------------------------
+# Tool configuration
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+# Default test discovery: only the tests/ directory.
+testpaths = ["tests"]
+# asyncio_mode = "auto" means async test functions are automatically treated
+# as coroutines by pytest-asyncio without requiring the @pytest.mark.asyncio
+# decorator on every test.
+asyncio_mode = "auto"
+# Markers that require explicit registration to avoid pytest warnings.
+markers = [
+    "integration: marks tests that require network or database access (deselect with -m 'not integration')",
+    "e2e: marks end-to-end browser tests requiring the full stack running",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+# Rule sets enabled:
+#   E, W  = pycodestyle errors/warnings
+#   F     = pyflakes (unused imports, undefined names)
+#   I     = isort (import ordering)
+#   UP    = pyupgrade (modern Python syntax)
+#   B     = flake8-bugbear (common bugs and design issues)
+#   SIM   = flake8-simplify
+select = ["E", "W", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",  # Line too long — ruff format handles this
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aurelius"]
+
+[tool.mypy]
+python_version = "3.12"
+# Strict checking on domain layer where correctness is most critical.
+# Other layers can be progressively tightened.
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+# Ignore missing stubs for third-party packages that don't ship them.
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Build system — required by uv
+# ---------------------------------------------------------------------------
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aurelius"]
