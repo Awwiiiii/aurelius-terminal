@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { HistoricalBarPointResponse } from '../../types/historical';
 
 interface HistoricalChartProps {
@@ -46,19 +46,22 @@ export const HistoricalChart: React.FC<HistoricalChartProps> = ({
     if (minP === Infinity) minP = 0;
     if (maxP === -Infinity) maxP = 100;
     if (maxV === 0) maxV = 1;
-    if (maxV20 === 0) maxV20 = 1;
+    if (maxV20 === 0) maxV20 = 0.5;
 
     // Add 5% padding to price bounds
     const pSpan = maxP - minP;
     const paddedMin = Math.max(0, minP - pSpan * 0.05);
     const paddedMax = maxP + pSpan * 0.05;
 
+    // Add 15% headroom to maxVol20 so the line doesn't clip on top edge
+    const paddedMaxVol20 = maxV20 > 0 ? maxV20 * 1.15 : 0.5;
+
     return {
       minPrice: paddedMin,
       maxPrice: paddedMax,
       maxVol: maxV,
       minDD: Math.min(-0.01, minD),
-      maxVol20: maxV20,
+      maxVol20: paddedMaxVol20,
     };
   }, [series]);
 
@@ -70,6 +73,11 @@ export const HistoricalChart: React.FC<HistoricalChartProps> = ({
   const totalHeight = mainHeight + gap + subHeight + 30; // +30 for dates
   const margin = { top: 20, right: 70, bottom: 25, left: 10 };
   const chartWidth = width - margin.left - margin.right;
+
+  // Reset hover crosshair on dataset or ticker changes
+  useEffect(() => {
+    setHoverIndex(null);
+  }, [series, ticker]);
 
   // Coordinate mappers
   const n = series.length;
@@ -138,9 +146,41 @@ export const HistoricalChart: React.FC<HistoricalChartProps> = ({
     return path;
   }, [series, minDD]);
 
-  // Rolling Volatility path
-  const rollingVolPath = useMemo(() => {
-    return makeIndicatorPath((p) => p.rolling_vol_20 ? String(getSubY(parseFloat(p.rolling_vol_20), 0, maxVol20)) : null);
+  // Rolling Volatility path and area (safely handles null warm-up observations)
+  const { rollingVolPath, rollingVolAreaPath } = useMemo(() => {
+    if (series.length === 0) return { rollingVolPath: '', rollingVolAreaPath: '' };
+
+    let path = '';
+    let areaPath = '';
+    let firstX: number | null = null;
+    let lastX: number | null = null;
+    const zeroY = getSubY(0, 0, maxVol20);
+
+    for (let i = 0; i < series.length; i++) {
+      const p = series[i];
+      if (p.rolling_vol_20 !== null) {
+        const val = parseFloat(p.rolling_vol_20);
+        if (!isNaN(val)) {
+          const x = getX(i);
+          const y = getSubY(val, 0, maxVol20);
+          if (firstX === null) {
+            firstX = x;
+            path += `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+            areaPath += `M ${x.toFixed(1)} ${zeroY.toFixed(1)} L ${x.toFixed(1)} ${y.toFixed(1)}`;
+          } else {
+            path += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+            areaPath += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+          }
+          lastX = x;
+        }
+      }
+    }
+
+    if (firstX !== null && lastX !== null) {
+      areaPath += ` L ${lastX.toFixed(1)} ${zeroY.toFixed(1)} Z`;
+    }
+
+    return { rollingVolPath: path, rollingVolAreaPath: areaPath };
   }, [series, maxVol20]);
 
   // Active hover bar point
@@ -148,11 +188,13 @@ export const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
   // Handle mouse move over SVG
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (series.length === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const svgX = ((e.clientX - rect.left) / rect.width) * width;
     const clampedX = Math.max(margin.left, Math.min(width - margin.right, svgX));
     const ratio = (clampedX - margin.left) / chartWidth;
-    const idx = Math.round(ratio * (series.length - 1));
+    const rawIdx = Math.round(ratio * (series.length - 1));
+    const idx = Math.max(0, Math.min(series.length - 1, rawIdx));
     setHoverIndex(idx);
   };
 
@@ -319,6 +361,16 @@ export const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 EMA20: <strong>${activePoint.ema_20}</strong>
               </span>
             )}
+            {subPanel === 'ROLLING_VOL' && (
+              <span className="hud-item" style={{ color: '#fbbf24' }}>
+                σ20:{' '}
+                <strong>
+                  {activePoint.rolling_vol_20 !== null
+                    ? `${(parseFloat(activePoint.rolling_vol_20) * 100).toFixed(2)}%`
+                    : 'WARM-UP (<20 returns)'}
+                </strong>
+              </span>
+            )}
           </div>
         ) : (
           <div className="hud-placeholder">
@@ -335,9 +387,29 @@ export const HistoricalChart: React.FC<HistoricalChartProps> = ({
         onMouseLeave={handleMouseLeave}
       >
         <defs>
+          <clipPath id="mainPanelClip">
+            <rect
+              x={margin.left}
+              y={margin.top}
+              width={chartWidth}
+              height={mainHeight}
+            />
+          </clipPath>
+          <clipPath id="subPanelClip">
+            <rect
+              x={margin.left}
+              y={margin.top + mainHeight + gap}
+              width={chartWidth}
+              height={subHeight}
+            />
+          </clipPath>
           <linearGradient id="drawdownGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="rgba(248, 113, 113, 0.4)" />
             <stop offset="100%" stopColor="rgba(239, 68, 68, 0.05)" />
+          </linearGradient>
+          <linearGradient id="rollingVolGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(251, 191, 36, 0.35)" />
+            <stop offset="100%" stopColor="rgba(251, 191, 36, 0.02)" />
           </linearGradient>
         </defs>
 
@@ -382,165 +454,289 @@ export const HistoricalChart: React.FC<HistoricalChartProps> = ({
           </g>
         ))}
 
-        {/* Line Chart */}
-        {chartType === 'LINE' && (
-          <path
-            d={linePath}
-            fill="none"
-            stroke="#38bdf8"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )}
+        {/* Main Chart Panel (Hardware Vector Clipped) */}
+        <g clipPath="url(#mainPanelClip)">
+          {/* Line Chart */}
+          {chartType === 'LINE' && (
+            <path
+              d={linePath}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
 
-        {/* Candlestick Chart */}
-        {chartType === 'CANDLESTICK' && (
-          <g className="candles-group">
-            {series.map((p, i) => {
-              const x = getX(i);
-              const o = parseFloat(p.open);
-              const c = parseFloat(p.close);
-              const h = parseFloat(p.high);
-              const l = parseFloat(p.low);
+          {/* Candlestick Chart */}
+          {chartType === 'CANDLESTICK' && (
+            <g className="candles-group">
+              {series.map((p, i) => {
+                const x = getX(i);
+                const o = parseFloat(p.open);
+                const c = parseFloat(p.close);
+                const h = parseFloat(p.high);
+                const l = parseFloat(p.low);
 
-              const yO = getYPrice(o);
-              const yC = getYPrice(c);
-              const yH = getYPrice(h);
-              const yL = getYPrice(l);
+                const yO = getYPrice(o);
+                const yC = getYPrice(c);
+                const yH = getYPrice(h);
+                const yL = getYPrice(l);
 
-              const isUp = c >= o;
-              const candleColor = isUp ? '#34d399' : '#f87171';
-              const candleWidth = Math.max(1.5, Math.min(10, (chartWidth / n) * 0.7));
-              const topY = Math.min(yO, yC);
-              const bodyHeight = Math.max(1, Math.abs(yO - yC));
+                const isUp = c >= o;
+                const candleColor = isUp ? '#34d399' : '#f87171';
+                const candleWidth = Math.max(1.5, Math.min(10, (chartWidth / n) * 0.7));
+                const topY = Math.min(yO, yC);
+                const bodyHeight = Math.max(1, Math.abs(yO - yC));
 
-              return (
-                <g key={p.date} className="candle">
-                  {/* High-Low Wick */}
-                  <line
-                    x1={x}
-                    y1={yH}
-                    x2={x}
-                    y2={yL}
-                    stroke={candleColor}
-                    strokeWidth="1"
-                  />
-                  {/* Real Body */}
+                return (
+                  <g key={p.date} className="candle">
+                    {/* High-Low Wick */}
+                    <line
+                      x1={x}
+                      y1={yH}
+                      x2={x}
+                      y2={yL}
+                      stroke={candleColor}
+                      strokeWidth="1"
+                    />
+                    {/* Real Body */}
+                    <rect
+                      x={x - candleWidth / 2}
+                      y={topY}
+                      width={candleWidth}
+                      height={bodyHeight}
+                      fill={candleColor}
+                      stroke={candleColor}
+                      strokeWidth="0.5"
+                    />
+                  </g>
+                );
+              })}
+            </g>
+          )}
+
+          {/* Overlay Paths */}
+          {showSMA20 && sma20Path && (
+            <path
+              d={sma20Path}
+              fill="none"
+              stroke="#06b6d4"
+              strokeWidth="1.5"
+              strokeDasharray="none"
+            />
+          )}
+          {showSMA50 && sma50Path && (
+            <path
+              d={sma50Path}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth="1.5"
+              strokeDasharray="none"
+            />
+          )}
+          {showSMA200 && sma200Path && (
+            <path
+              d={sma200Path}
+              fill="none"
+              stroke="#a855f7"
+              strokeWidth="1.5"
+              strokeDasharray="none"
+            />
+          )}
+          {showEMA20 && ema20Path && (
+            <path
+              d={ema20Path}
+              fill="none"
+              stroke="#10b981"
+              strokeWidth="1.5"
+              strokeDasharray="none"
+            />
+          )}
+        </g>
+
+        {/* Sub-Panel Renderings (Hardware Vector Clipped) */}
+        <g clipPath="url(#subPanelClip)">
+          {subPanel === 'VOLUME' && (
+            <g className="volume-bars">
+              {series.map((p, i) => {
+                const x = getX(i);
+                const vol = p.volume;
+                const y = getSubY(vol, 0, maxVol);
+                const subBottom = margin.top + mainHeight + gap + subHeight;
+                const barH = Math.max(1, subBottom - y);
+                const isUp = parseFloat(p.close) >= parseFloat(p.open);
+                const col = isUp ? 'rgba(52, 211, 153, 0.4)' : 'rgba(248, 113, 113, 0.4)';
+                const barWidth = Math.max(1, Math.min(8, (chartWidth / n) * 0.7));
+
+                return (
                   <rect
-                    x={x - candleWidth / 2}
-                    y={topY}
-                    width={candleWidth}
-                    height={bodyHeight}
-                    fill={isUp ? candleColor : candleColor}
-                    stroke={candleColor}
-                    strokeWidth="0.5"
+                    key={p.date}
+                    x={x - barWidth / 2}
+                    y={y}
+                    width={barWidth}
+                    height={barH}
+                    fill={col}
                   />
-                </g>
-              );
-            })}
-          </g>
-        )}
+                );
+              })}
+            </g>
+          )}
 
-        {/* Overlay Paths */}
-        {showSMA20 && sma20Path && (
-          <path
-            d={sma20Path}
-            fill="none"
-            stroke="#06b6d4"
-            strokeWidth="1.5"
-            strokeDasharray="none"
-          />
-        )}
-        {showSMA50 && sma50Path && (
-          <path
-            d={sma50Path}
-            fill="none"
-            stroke="#f59e0b"
-            strokeWidth="1.5"
-            strokeDasharray="none"
-          />
-        )}
-        {showSMA200 && sma200Path && (
-          <path
-            d={sma200Path}
-            fill="none"
-            stroke="#a855f7"
-            strokeWidth="1.5"
-            strokeDasharray="none"
-          />
-        )}
-        {showEMA20 && ema20Path && (
-          <path
-            d={ema20Path}
-            fill="none"
-            stroke="#10b981"
-            strokeWidth="1.5"
-            strokeDasharray="none"
-          />
-        )}
+          {subPanel === 'DRAWDOWN' && (
+            <g className="underwater-dd">
+              <path d={drawdownPath} fill="url(#drawdownGrad)" stroke="#ef4444" strokeWidth="1.5" />
+              <line
+                x1={margin.left}
+                y1={getSubY(0, minDD, 0)}
+                x2={margin.left + chartWidth}
+                y2={getSubY(0, minDD, 0)}
+                stroke="rgba(255, 255, 255, 0.3)"
+                strokeDasharray="2 2"
+              />
+            </g>
+          )}
 
-        {/* Sub-Panel Renderings */}
-        {subPanel === 'VOLUME' && (
-          <g className="volume-bars">
-            {series.map((p, i) => {
-              const x = getX(i);
-              const vol = p.volume;
-              const y = getSubY(vol, 0, maxVol);
-              const subBottom = margin.top + mainHeight + gap + subHeight;
-              const barH = Math.max(1, subBottom - y);
-              const isUp = parseFloat(p.close) >= parseFloat(p.open);
-              const col = isUp ? 'rgba(52, 211, 153, 0.4)' : 'rgba(248, 113, 113, 0.4)';
-              const barWidth = Math.max(1, Math.min(8, (chartWidth / n) * 0.7));
-
-              return (
-                <rect
-                  key={p.date}
-                  x={x - barWidth / 2}
-                  y={y}
-                  width={barWidth}
-                  height={barH}
-                  fill={col}
+          {subPanel === 'ROLLING_VOL' && (
+            <g className="rolling-vol">
+              {rollingVolAreaPath && (
+                <path d={rollingVolAreaPath} fill="url(#rollingVolGrad)" />
+              )}
+              {rollingVolPath && (
+                <path
+                  d={rollingVolPath}
+                  fill="none"
+                  stroke="#fbbf24"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
-              );
-            })}
+              )}
+            </g>
+          )}
+        </g>
+
+        {/* Sub-Panel Grid Lines and Y-Axis Ticks */}
+        {subPanel === 'VOLUME' && (
+          <g className="sub-panel-ticks">
+            <line
+              x1={margin.left}
+              y1={getSubY(maxVol / 2, 0, maxVol)}
+              x2={margin.left + chartWidth}
+              y2={getSubY(maxVol / 2, 0, maxVol)}
+              stroke="rgba(255, 255, 255, 0.05)"
+              strokeDasharray="3 3"
+            />
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(maxVol, 0, maxVol) + 4}
+              fill="rgba(148, 163, 184, 0.7)"
+              fontSize="10"
+              fontFamily="monospace"
+            >
+              {(maxVol / 1000000).toFixed(1)}M Vol
+            </text>
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(maxVol / 2, 0, maxVol) + 4}
+              fill="rgba(148, 163, 184, 0.5)"
+              fontSize="9"
+              fontFamily="monospace"
+            >
+              {(maxVol / 2000000).toFixed(1)}M
+            </text>
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(0, 0, maxVol)}
+              fill="rgba(148, 163, 184, 0.5)"
+              fontSize="9"
+              fontFamily="monospace"
+            >
+              0
+            </text>
           </g>
         )}
 
         {subPanel === 'DRAWDOWN' && (
-          <g className="underwater-dd">
-            <path d={drawdownPath} fill="url(#drawdownGrad)" stroke="#ef4444" strokeWidth="1.5" />
+          <g className="sub-panel-ticks">
             <line
               x1={margin.left}
-              y1={getSubY(0, minDD, 0)}
+              y1={getSubY(minDD / 2, minDD, 0)}
               x2={margin.left + chartWidth}
-              y2={getSubY(0, minDD, 0)}
-              stroke="rgba(255, 255, 255, 0.3)"
-              strokeDasharray="2 2"
+              y2={getSubY(minDD / 2, minDD, 0)}
+              stroke="rgba(255, 255, 255, 0.05)"
+              strokeDasharray="3 3"
             />
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(0, minDD, 0) + 4}
+              fill="rgba(148, 163, 184, 0.7)"
+              fontSize="10"
+              fontFamily="monospace"
+            >
+              0.0% DD
+            </text>
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(minDD / 2, minDD, 0) + 4}
+              fill="rgba(148, 163, 184, 0.5)"
+              fontSize="9"
+              fontFamily="monospace"
+            >
+              {(minDD * 50).toFixed(1)}%
+            </text>
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(minDD, minDD, 0)}
+              fill="rgba(148, 163, 184, 0.5)"
+              fontSize="9"
+              fontFamily="monospace"
+            >
+              {(minDD * 100).toFixed(1)}%
+            </text>
           </g>
         )}
 
         {subPanel === 'ROLLING_VOL' && (
-          <g className="rolling-vol">
-            <path d={rollingVolPath} fill="none" stroke="#fbbf24" strokeWidth="1.5" />
+          <g className="sub-panel-ticks">
+            <line
+              x1={margin.left}
+              y1={getSubY(maxVol20 / 2, 0, maxVol20)}
+              x2={margin.left + chartWidth}
+              y2={getSubY(maxVol20 / 2, 0, maxVol20)}
+              stroke="rgba(255, 255, 255, 0.05)"
+              strokeDasharray="3 3"
+            />
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(maxVol20, 0, maxVol20) + 4}
+              fill="rgba(251, 191, 36, 0.85)"
+              fontSize="10"
+              fontFamily="monospace"
+              fontWeight="600"
+            >
+              {(maxVol20 * 100).toFixed(1)}% σ
+            </text>
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(maxVol20 / 2, 0, maxVol20) + 4}
+              fill="rgba(148, 163, 184, 0.5)"
+              fontSize="9"
+              fontFamily="monospace"
+            >
+              {(maxVol20 * 50).toFixed(1)}%
+            </text>
+            <text
+              x={margin.left + chartWidth + 8}
+              y={getSubY(0, 0, maxVol20)}
+              fill="rgba(148, 163, 184, 0.5)"
+              fontSize="9"
+              fontFamily="monospace"
+            >
+              0.0%
+            </text>
           </g>
         )}
-
-        {/* Sub-Panel Y-Axis Label */}
-        <text
-          x={margin.left + chartWidth + 8}
-          y={margin.top + mainHeight + gap + 15}
-          fill="rgba(148, 163, 184, 0.7)"
-          fontSize="10"
-          fontFamily="monospace"
-        >
-          {subPanel === 'VOLUME'
-            ? `${(maxVol / 1000000).toFixed(1)}M Vol`
-            : subPanel === 'DRAWDOWN'
-            ? `${(minDD * 100).toFixed(0)}% DD`
-            : `${(maxVol20 * 100).toFixed(0)}% σ`}
-        </text>
 
         {/* Interactive Crosshair */}
         {hoverIndex !== null && activePoint && (
