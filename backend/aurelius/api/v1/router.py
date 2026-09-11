@@ -21,11 +21,13 @@ from datetime import UTC, datetime
 from fastapi import APIRouter
 
 from aurelius import __version__
+from aurelius.api.v1.market import router as market_router
 from aurelius.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+router.include_router(market_router)
 
 
 # ---------------------------------------------------------------------------

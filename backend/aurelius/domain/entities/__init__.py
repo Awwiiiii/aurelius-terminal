@@ -3,26 +3,34 @@ aurelius.domain.entities
 ========================
 Core financial domain entities for AURELIUS.
 
-Entities are introduced incrementally — only when a milestone requires them.
-This file documents what entities EXIST now vs. what is PLANNED for future milestones.
-
-Milestone 0 — Created:
-  (empty — no financial entities required yet; structure established)
-
-Milestone 1 — Will introduce:
-  Security   — Ticker, name, exchange, asset type, currency
-  Price      — A single price observation with timestamp and source
-  OHLCV      — Open/High/Low/Close/Volume bar for a single period
-  Quote      — Real-time or delayed market quote snapshot
-
-Milestone 4+ — Will introduce:
-  PriceReturn, LogReturn, CumulativeReturn
-
-Milestone 5+ — Will introduce:
-  Volatility, Drawdown
-
-Milestone 6+ — Will introduce:
-  FinancialStatement (IncomeStatement, BalanceSheet, CashFlowStatement)
-
-Do not create entities prematurely.
+Milestone 1 Entities:
+  - Security: Tradable asset metadata
+  - Price, PriceChange: Point-in-time price observations using Decimal
+  - Quote: Market price snapshot with integer volume
+  - OHLCVBar, OHLCVSeries: Historical bar models with unadjusted raw OHLC and provider adj_close
+  - Enums: AssetType, Currency, MarketInterval (restricted to 1d in M1), MarketState
 """
+
+from aurelius.domain.entities.enums import (
+    AssetType,
+    Currency,
+    MarketInterval,
+    MarketState,
+)
+from aurelius.domain.entities.ohlcv import OHLCVBar, OHLCVSeries
+from aurelius.domain.entities.price import Price, PriceChange
+from aurelius.domain.entities.quote import Quote
+from aurelius.domain.entities.security import Security
+
+__all__ = [
+    "AssetType",
+    "Currency",
+    "MarketInterval",
+    "MarketState",
+    "OHLCVBar",
+    "OHLCVSeries",
+    "Price",
+    "PriceChange",
+    "Quote",
+    "Security",
+]

@@ -124,6 +124,3 @@ class TestDataQualityError:
         )
         assert exc.check == "ohlc_consistency"
         assert exc.ticker == "TSLA"
-
-
-

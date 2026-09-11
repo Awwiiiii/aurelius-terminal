@@ -6,7 +6,7 @@ AURELIUS is designed as a serious financial research platform demonstrating:
 financial data engineering, market data analysis, fundamental analysis, valuation,
 portfolio analytics, risk analysis, quantitative research, and backtesting.
 
-> **Status**: Milestone 0 — Architecture & Project Foundation
+> **Status**: Milestone 1 — Market Data Infrastructure
 
 ---
 
@@ -80,7 +80,7 @@ before the next begins. Every financial formula is documented, tested, and verif
 | Milestone | Name | Status |
 |---|---|---|
 | 0 | Architecture & Project Foundation | ✅ Complete |
-| 1 | Market Data Infrastructure | ⏳ Pending |
+| 1 | Market Data Infrastructure | 🟡 Implemented (Awaiting Final Audit Approval) |
 | 2 | Security Search & Company Profiles | ⏳ Pending |
 | 3 | Market Overview | ⏳ Pending |
 | 4 | Historical Market Analysis | ⏳ Pending |

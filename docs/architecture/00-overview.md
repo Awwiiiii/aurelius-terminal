@@ -91,20 +91,22 @@ FastAPI Backend (Python 3.12)
 
 ---
 
-## Current State (Milestone 0)
+## Current State (Milestone 1)
 
 | Component | Status |
 |---|---|
 | Git repository | ✅ Initialized |
 | Backend scaffold | ✅ Created |
 | Domain errors | ✅ Implemented |
+| Domain entities (Quote, OHLCV, Security) | ✅ Implemented (M1) |
 | Settings (pydantic-settings) | ✅ Implemented |
 | FastAPI app + health endpoint | ✅ Implemented |
 | Infrastructure logging | ✅ Implemented |
-| Frontend scaffold (Vite + React + TS) | ✅ Created |
-| Provider abstraction | 🔲 Milestone 1 |
-| Market data endpoints | 🔲 Milestone 1 |
-| Database schema | 🔲 Milestone 1+ |
+| Provider abstraction (MarketDataProvider, Registry) | ✅ Implemented (M1) |
+| YFinanceProvider (selective retry, thread offload) | ✅ Implemented (M1) |
+| Market data endpoints (`/quote`, `/ohlcv`) | ✅ Implemented (M1) |
+| Frontend UI (AppShell, QuoteCard, OHLCVTable) | ✅ Implemented (M1) |
+| Database schema | 🔲 Milestone 2+ |
 | Financial calculations | 🔲 Milestone 4+ |
 
 ---
@@ -152,7 +154,8 @@ Format: `NNNN-title.md` (e.g., `0001-use-sqlite-for-development.md`)
 An ADR is only created when documenting an **actual significant decision that was made**.
 Do not create ADRs for trivial choices.
 
-**Current ADRs**: None yet (created when needed from Milestone 1 onward).
+**Current ADRs**:
+- [`decisions/0001-yfinance-as-primary-provider.md`](decisions/0001-yfinance-as-primary-provider.md) — YFinance as Primary Market Data Provider in Milestone 1
 
 ---
 

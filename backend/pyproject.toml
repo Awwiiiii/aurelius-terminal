@@ -37,6 +37,13 @@ dependencies = [
     # httpx: Async HTTP client used to call external data provider APIs.
     # Preferred over requests because FastAPI is async-first.
     "httpx>=0.28",
+
+    # Milestone 1: Market data infrastructure
+    # yfinance: Primary market data provider for quotes and historical daily OHLCV.
+    "yfinance>=0.2.50",
+
+    # pandas: Required dependency of yfinance for DataFrame handling and series normalization.
+    "pandas>=2.2.0",
 ]
 
 # ---------------------------------------------------------------------------
