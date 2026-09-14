@@ -5,6 +5,7 @@ import { fetchLast30DaysOHLCV, fetchQuote } from './api/market';
 import { CompanyProfileCard } from './components/company/CompanyProfileCard';
 import { SecurityHeader } from './components/company/SecurityHeader';
 import { HistoricalAnalysisView } from './components/historical/HistoricalAnalysisView';
+import { FinancialStatementsView } from './components/financials/FinancialStatementsView';
 import { AppShell } from './components/layout/AppShell';
 import { OHLCVTable } from './components/market/OHLCVTable';
 import { QuoteCard } from './components/market/QuoteCard';
@@ -18,7 +19,7 @@ import type { OHLCVResponse, QuoteResponse } from './types/market';
 
 export function App() {
   const [activeView, setActiveView] = useState<
-    'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE'
+    'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS'
   >('OVERVIEW');
   const [ticker, setTicker] = useState<string>('AAPL');
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
@@ -73,6 +74,11 @@ export function App() {
     setActiveView('QUANTITATIVE');
   };
 
+  const handleLaunchFinancials = (newTicker: string) => {
+    setTicker(newTicker);
+    setActiveView('FINANCIALS');
+  };
+
   return (
     <AppShell
       activeView={activeView}
@@ -88,6 +94,11 @@ export function App() {
         />
       ) : activeView === 'QUANTITATIVE' ? (
         <QuantitativeView
+          initialTicker={ticker}
+          onSelectTicker={(s) => setTicker(s)}
+        />
+      ) : activeView === 'FINANCIALS' ? (
+        <FinancialStatementsView
           initialTicker={ticker}
           onSelectTicker={(s) => setTicker(s)}
         />
@@ -116,6 +127,7 @@ export function App() {
               website={securityDetail.company_profile?.website}
               onLaunchHistorical={handleLaunchHistorical}
               onLaunchQuantitative={handleLaunchQuantitative}
+              onLaunchFinancials={handleLaunchFinancials}
             />
           )}
 

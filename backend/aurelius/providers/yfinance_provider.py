@@ -47,6 +47,20 @@ from aurelius.domain.entities.enums import (
     MarketInterval,
     MarketState,
 )
+from aurelius.domain.entities.financials import (
+    CanonicalConcept,
+    Filing,
+    FinancialConcept,
+    FinancialFact,
+    FinancialPeriod,
+    FinancialStatement,
+    FiscalPeriodLabel,
+    FiscalPeriodType,
+    PeriodType,
+    Scale,
+    StatementType,
+    Unit,
+)
 from aurelius.domain.entities.market_overview import (
     CANONICAL_BENCHMARKS,
     BenchmarkSnapshot,
@@ -115,6 +129,66 @@ BENCHMARK_PROVIDER_MAPPING: dict[str, str] = {
 }
 PROVIDER_BENCHMARK_MAPPING: dict[str, str] = {
     v: k for k, v in BENCHMARK_PROVIDER_MAPPING.items()
+}
+
+YFINANCE_INCOME_MAPPING: dict[str, CanonicalConcept] = {
+    "Total Revenue": CanonicalConcept.REVENUE,
+    "Operating Revenue": CanonicalConcept.REVENUE,
+    "Cost Of Revenue": CanonicalConcept.COST_OF_REVENUE,
+    "Reconciled Cost Of Revenue": CanonicalConcept.COST_OF_REVENUE,
+    "Gross Profit": CanonicalConcept.GROSS_PROFIT,
+    "Operating Expense": CanonicalConcept.OPERATING_EXPENSES,
+    "Total Expenses": CanonicalConcept.OPERATING_EXPENSES,
+    "Research And Development": CanonicalConcept.RESEARCH_AND_DEVELOPMENT,
+    "Selling General And Administration": CanonicalConcept.SELLING_GENERAL_AND_ADMINISTRATIVE,
+    "Operating Income": CanonicalConcept.OPERATING_INCOME,
+    "Total Operating Income As Reported": CanonicalConcept.OPERATING_INCOME,
+    "Other Income Expense": CanonicalConcept.OTHER_INCOME_EXPENSE,
+    "Other Non Operating Income Expenses": CanonicalConcept.OTHER_INCOME_EXPENSE,
+    "Pretax Income": CanonicalConcept.PRETAX_INCOME,
+    "Tax Provision": CanonicalConcept.INCOME_TAX_EXPENSE,
+    "Net Income": CanonicalConcept.NET_INCOME,
+    "Net Income Common Stockholders": CanonicalConcept.NET_INCOME,
+    "Net Income Continuous Operations": CanonicalConcept.NET_INCOME,
+    "EBITDA": CanonicalConcept.EBITDA,
+    "Normalized EBITDA": CanonicalConcept.EBITDA,
+}
+
+YFINANCE_BALANCE_SHEET_MAPPING: dict[str, CanonicalConcept] = {
+    "Cash And Cash Equivalents": CanonicalConcept.CASH_AND_EQUIVALENTS,
+    "Cash Cash Equivalents And Short Term Investments": CanonicalConcept.CASH_AND_EQUIVALENTS,
+    "Other Short Term Investments": CanonicalConcept.SHORT_TERM_INVESTMENTS,
+    "Accounts Receivable": CanonicalConcept.ACCOUNTS_RECEIVABLE,
+    "Receivables": CanonicalConcept.ACCOUNTS_RECEIVABLE,
+    "Inventory": CanonicalConcept.INVENTORY,
+    "Current Assets": CanonicalConcept.CURRENT_ASSETS,
+    "Net PPE": CanonicalConcept.PROPERTY_PLANT_EQUIPMENT,
+    "Gross PPE": CanonicalConcept.PROPERTY_PLANT_EQUIPMENT,
+    "Goodwill": CanonicalConcept.GOODWILL,
+    "Intangible Assets": CanonicalConcept.INTANGIBLE_ASSETS,
+    "Total Assets": CanonicalConcept.TOTAL_ASSETS,
+    "Accounts Payable": CanonicalConcept.ACCOUNTS_PAYABLE,
+    "Payables": CanonicalConcept.ACCOUNTS_PAYABLE,
+    "Current Liabilities": CanonicalConcept.CURRENT_LIABILITIES,
+    "Long Term Debt": CanonicalConcept.LONG_TERM_DEBT,
+    "Long Term Debt And Capital Lease Obligation": CanonicalConcept.LONG_TERM_DEBT,
+    "Total Liabilities Net Minority Interest": CanonicalConcept.TOTAL_LIABILITIES,
+    "Total Liabilities": CanonicalConcept.TOTAL_LIABILITIES,
+    "Stockholders Equity": CanonicalConcept.STOCKHOLDERS_EQUITY,
+    "Common Stock Equity": CanonicalConcept.STOCKHOLDERS_EQUITY,
+    "Total Equity Gross Minority Interest": CanonicalConcept.STOCKHOLDERS_EQUITY,
+}
+
+YFINANCE_CASH_FLOW_MAPPING: dict[str, CanonicalConcept] = {
+    "Operating Cash Flow": CanonicalConcept.OPERATING_CASH_FLOW,
+    "Cash Flow From Continuing Operating Activities": CanonicalConcept.OPERATING_CASH_FLOW,
+    "Capital Expenditure": CanonicalConcept.CAPITAL_EXPENDITURES,
+    "Investing Cash Flow": CanonicalConcept.INVESTING_CASH_FLOW,
+    "Cash Flow From Continuing Investing Activities": CanonicalConcept.INVESTING_CASH_FLOW,
+    "Financing Cash Flow": CanonicalConcept.FINANCING_CASH_FLOW,
+    "Cash Flow From Continuing Financing Activities": CanonicalConcept.FINANCING_CASH_FLOW,
+    "Changes In Cash": CanonicalConcept.NET_CHANGE_IN_CASH,
+    "Change In Cash": CanonicalConcept.NET_CHANGE_IN_CASH,
 }
 
 
@@ -1064,3 +1138,179 @@ class YFinanceProvider(MarketDataProvider):
             return movers
 
         return await _execute_with_retry(_fetch_movers_sync)
+
+    async def get_financial_statements(
+        self,
+        ticker: str,
+        statement_type: StatementType,
+        frequency: FiscalPeriodType = FiscalPeriodType.ANNUAL,
+    ) -> list[FinancialStatement]:
+        """
+        Retrieve historical financial statements for a corporate equity.
+        """
+        normalized_ticker = validate_ticker(ticker)
+
+        def _fetch_statements_sync() -> list[FinancialStatement]:
+            try:
+                yf_ticker = yf.Ticker(normalized_ticker)
+            except Exception as exc:
+                raise ProviderUnavailableError(
+                    f"Failed to initialize Yahoo Finance for {normalized_ticker}: {exc}",
+                    provider=self.name,
+                    ticker=normalized_ticker,
+                ) from exc
+
+            if statement_type == StatementType.INCOME_STATEMENT:
+                df = (
+                    yf_ticker.financials
+                    if frequency == FiscalPeriodType.ANNUAL
+                    else yf_ticker.quarterly_financials
+                )
+                mapping = YFINANCE_INCOME_MAPPING
+            elif statement_type == StatementType.BALANCE_SHEET:
+                df = (
+                    yf_ticker.balance_sheet
+                    if frequency == FiscalPeriodType.ANNUAL
+                    else yf_ticker.quarterly_balance_sheet
+                )
+                mapping = YFINANCE_BALANCE_SHEET_MAPPING
+            elif statement_type == StatementType.CASH_FLOW:
+                df = (
+                    yf_ticker.cashflow
+                    if frequency == FiscalPeriodType.ANNUAL
+                    else yf_ticker.quarterly_cashflow
+                )
+                mapping = YFINANCE_CASH_FLOW_MAPPING
+            else:
+                raise ValueError(f"Unsupported statement type: {statement_type}")
+
+            if df is None or getattr(df, "empty", True) or len(df.columns) == 0:
+                return []
+
+            # Determine reporting currency
+            fast_info = getattr(yf_ticker, "fast_info", None)
+            currency_str = getattr(fast_info, "currency", None) or "USD"
+            try:
+                currency = Currency(str(currency_str).upper())
+            except (ValueError, AttributeError):
+                currency = Currency.USD
+
+            statements: list[FinancialStatement] = []
+
+            def _col_to_date(c: Any) -> date:
+                if hasattr(c, "date"):
+                    return c.date()
+                return datetime.fromisoformat(str(c)[:10]).date()
+
+            sorted_cols = sorted(df.columns, key=_col_to_date)
+
+            for col in sorted_cols:
+                col_date = _col_to_date(col)
+                period_key = col_date.isoformat()
+
+                if statement_type == StatementType.BALANCE_SHEET:
+                    period = FinancialPeriod(
+                        period_type=PeriodType.INSTANT,
+                        instant_date=col_date,
+                        calendar_year=col_date.year,
+                        fiscal_year=(
+                            col_date.year
+                            if frequency == FiscalPeriodType.ANNUAL
+                            else None
+                        ),
+                        fiscal_period=(
+                            FiscalPeriodLabel.FY
+                            if frequency == FiscalPeriodType.ANNUAL
+                            else None
+                        ),
+                        is_period_label_source_reported=False,
+                    )
+                else:
+                    period = FinancialPeriod(
+                        period_type=PeriodType.DURATION,
+                        end_date=col_date,
+                        calendar_year=col_date.year,
+                        fiscal_year=(
+                            col_date.year
+                            if frequency == FiscalPeriodType.ANNUAL
+                            else None
+                        ),
+                        fiscal_period=(
+                            FiscalPeriodLabel.FY
+                            if frequency == FiscalPeriodType.ANNUAL
+                            else None
+                        ),
+                        is_period_label_source_reported=False,
+                    )
+
+                filing = Filing(
+                    filing_id=f"{normalized_ticker}_{frequency.value}_{period_key}",
+                    company_id=normalized_ticker,
+                    accession_number=None,
+                    form_type=None,
+                    filing_date=None,
+                    report_period_end=col_date,
+                    source="yahoo_finance",
+                )
+
+                facts: list[FinancialFact] = []
+                for row in df.index:
+                    raw_val = df.loc[row, col]
+                    if raw_val is None or pd.isna(raw_val):
+                        continue
+
+                    try:
+                        f_val = float(raw_val)
+                        dec_val = (
+                            Decimal(str(int(f_val)))
+                            if f_val.is_integer()
+                            else Decimal(str(f_val))
+                        )
+                    except Exception:
+                        continue
+
+                    source_row_name = str(row)
+                    canonical_concept = mapping.get(source_row_name)
+
+                    concept = FinancialConcept(
+                        source_concept=source_row_name,
+                        canonical_concept=canonical_concept,
+                        statement_type=statement_type,
+                        taxonomy="yahoo_finance",
+                    )
+
+                    fact = FinancialFact(
+                        fact_id=f"{normalized_ticker}_{statement_type.value}_{frequency.value}_{period_key}_{source_row_name.replace(' ', '_')}",
+                        company_id=normalized_ticker,
+                        concept=concept,
+                        value=dec_val,
+                        unit=Unit.CURRENCY,
+                        currency=currency,
+                        scale=Scale.UNITS,
+                        period=period,
+                        filing=filing,
+                        dimensions={},
+                        provenance={
+                            "provider": "yahoo_finance",
+                            "source_row": source_row_name,
+                            "source_column": str(col),
+                        },
+                        is_restated=False,
+                    )
+                    facts.append(fact)
+
+                statement = FinancialStatement(
+                    statement_id=f"{normalized_ticker}_{statement_type.value}_{frequency.value}_{period_key}",
+                    company_id=normalized_ticker,
+                    statement_type=statement_type,
+                    frequency=frequency,
+                    period=period,
+                    facts=facts,
+                    currency=currency,
+                    filing=filing,
+                )
+                statements.append(statement)
+
+            return statements
+
+        return await _execute_with_retry(_fetch_statements_sync)

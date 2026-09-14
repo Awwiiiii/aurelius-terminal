@@ -4,6 +4,13 @@ from aurelius.api.v1.schemas.company import (
     SecurityDetailResponse,
     SecurityInfoResponse,
 )
+from aurelius.api.v1.schemas.financials import (
+    FinancialFactSchema,
+    FinancialMatrixRowSchema,
+    FinancialPeriodSchema,
+    FinancialStatementMatrixResponse,
+    FinancialStatementResponse,
+)
 from aurelius.api.v1.schemas.historical import (
     BenchmarkComparisonResponse,
     DrawdownMetricsResponse,
@@ -46,6 +53,11 @@ __all__ = [
     "CompanyProfileResponse",
     "DescriptiveStatisticsResponse",
     "DrawdownMetricsResponse",
+    "FinancialFactSchema",
+    "FinancialMatrixRowSchema",
+    "FinancialPeriodSchema",
+    "FinancialStatementMatrixResponse",
+    "FinancialStatementResponse",
     "HistogramBinResponse",
     "HistoricalAnalysisResponse",
     "HistoricalBarPointResponse",

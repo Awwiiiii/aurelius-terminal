@@ -6,6 +6,7 @@ interface SecurityHeaderProps {
   website?: string | null;
   onLaunchHistorical?: (ticker: string) => void;
   onLaunchQuantitative?: (ticker: string) => void;
+  onLaunchFinancials?: (ticker: string) => void;
 }
 
 export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
@@ -13,6 +14,7 @@ export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
   website,
   onLaunchHistorical,
   onLaunchQuantitative,
+  onLaunchFinancials,
 }) => {
   return (
     <div className="security-header-panel">
@@ -69,6 +71,16 @@ export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
               title="Launch quantitative return distribution and risk analytics for this security"
             >
               ⨀ QUANTITATIVE
+            </button>
+          )}
+          {onLaunchFinancials && (
+            <button
+              type="button"
+              className="security-action-tag launch-financials-tag"
+              onClick={() => onLaunchFinancials(security.ticker)}
+              title="Launch financial statement infrastructure disclosures for this security"
+            >
+              ▤ FINANCIALS
             </button>
           )}
         </div>

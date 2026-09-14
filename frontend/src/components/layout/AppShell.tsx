@@ -3,8 +3,10 @@ import React from 'react';
 interface AppShellProps {
   children: React.ReactNode;
   headerCenter?: React.ReactNode;
-  activeView?: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE';
-  onViewChange?: (view: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE') => void;
+  activeView?: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS';
+  onViewChange?: (
+    view: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS'
+  ) => void;
 }
 
 export const AppShell: React.FC<AppShellProps> = ({
@@ -59,12 +61,20 @@ export const AppShell: React.FC<AppShellProps> = ({
             <span className="mode-btn-icon">⨀</span>
             <span>QUANTITATIVE ANALYTICS</span>
           </button>
+          <button
+            type="button"
+            className={`mode-switch-btn ${activeView === 'FINANCIALS' ? 'active' : ''}`}
+            onClick={() => onViewChange && onViewChange('FINANCIALS')}
+          >
+            <span className="mode-btn-icon">▤</span>
+            <span>FINANCIAL STATEMENTS</span>
+          </button>
         </div>
 
         {headerCenter && <div className="header-center">{headerCenter}</div>}
 
         <div className="header-meta">
-          <span className="milestone-badge">M5 — QUANTITATIVE ANALYTICS</span>
+          <span className="milestone-badge">M6 — FINANCIAL STATEMENTS</span>
           <span className="live-status">
             <span className="status-dot"></span>
             SYSTEM ONLINE

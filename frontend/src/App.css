@@ -3222,4 +3222,413 @@
   color: var(--text-muted);
 }
 
+/* =============================================================================
+   M6 — FINANCIAL STATEMENTS WORKSPACE
+   ============================================================================= */
+
+.financials-view-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.financials-header-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 14px 20px;
+}
+
+.financials-controls-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.financials-controls-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.statement-type-buttons,
+.frequency-toggle-buttons {
+  display: flex;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.statement-btn,
+.freq-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: 0.04em;
+}
+
+.statement-btn:hover,
+.freq-btn:hover {
+  color: var(--text-main);
+  background-color: var(--bg-surface-hover);
+}
+
+.statement-btn.active,
+.freq-btn.active {
+  color: var(--accent-gold);
+  background-color: var(--accent-gold-dim);
+  border: 1px solid rgba(229, 169, 59, 0.3);
+}
+
+/* Financials Table Container */
+.financials-table-container {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.financials-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.toolbar-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.metric-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+
+.currency-badge {
+  color: var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.scale-badge {
+  color: var(--accent-gold);
+  background: var(--accent-gold-dim);
+  border: 1px solid rgba(229, 169, 59, 0.25);
+}
+
+.count-badge {
+  color: var(--text-muted);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.scale-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.control-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.scale-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.scale-btn:hover {
+  color: var(--text-main);
+  border-color: var(--border-strong);
+}
+
+.scale-btn.active {
+  color: var(--accent-cyan);
+  background: var(--accent-cyan-dim);
+  border-color: var(--accent-cyan);
+}
+
+.filter-toggle .toggle-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: 0.04em;
+}
+
+.filter-toggle .toggle-btn:hover {
+  color: var(--text-main);
+  border-color: var(--border-strong);
+}
+
+.filter-toggle .toggle-btn.active {
+  color: var(--accent-gold);
+  background: var(--accent-gold-dim);
+  border-color: var(--accent-gold);
+}
+
+/* Scrollable Financials Matrix Grid */
+.financials-grid-scroll {
+  width: 100%;
+  overflow-x: auto;
+  max-height: 720px;
+  overflow-y: auto;
+}
+
+.financials-matrix-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.financials-matrix-table th,
+.financials-matrix-table td {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.financials-matrix-table thead th {
+  position: sticky;
+  top: 0;
+  background-color: #101621;
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: 11px;
+  border-bottom: 2px solid var(--border-strong);
+  z-index: 3;
+}
+
+.financials-matrix-table thead th.sticky-col {
+  z-index: 4;
+}
+
+.header-period {
+  text-align: right;
+  min-width: 140px;
+}
+
+.period-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  letter-spacing: 0.04em;
+}
+
+.period-subtitle {
+  font-size: 9px;
+  color: var(--text-dim);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.sticky-col {
+  position: sticky;
+  left: 0;
+  background-color: var(--bg-panel);
+  z-index: 2;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.45);
+  min-width: 320px;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-line-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: inherit;
+}
+
+.canonical-row td {
+  font-weight: 600;
+  color: var(--text-main);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.canonical-row .row-name {
+  color: #ffffff;
+  letter-spacing: 0.02em;
+}
+
+.detailed-row td {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.detailed-row .cell-line-item {
+  padding-left: 14px;
+}
+
+.row-indicator {
+  color: var(--accent-gold);
+  font-size: 11px;
+}
+
+.detailed-row .row-indicator {
+  color: var(--text-dim);
+}
+
+.canonical-tag {
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--accent-gold);
+  background: var(--accent-gold-dim);
+  border: 1px solid rgba(229, 169, 59, 0.25);
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: auto;
+  letter-spacing: 0.06em;
+}
+
+.cell-value {
+  text-align: right;
+}
+
+.cell-positive {
+  color: var(--text-main);
+}
+
+.cell-negative {
+  color: var(--market-down);
+}
+
+.cell-missing {
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+
+.matrix-row:hover td {
+  background-color: var(--bg-surface-hover);
+}
+
+/* Empty & Loading States */
+.financials-empty-state,
+.financials-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 64px 20px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  text-align: center;
+}
+
+.financials-empty-state .empty-icon {
+  font-size: 32px;
+  color: var(--text-dim);
+}
+
+.financials-empty-state .empty-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 0.08em;
+}
+
+.financials-empty-state .empty-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 480px;
+}
+
+.financials-loading-state {
+  color: var(--accent-gold);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.loading-spinner {
+  font-size: 20px;
+  animation: spin 1.5s infinite linear;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.launch-financials-tag {
+  background: var(--accent-gold-dim);
+  border: 1px solid rgba(229, 169, 59, 0.3);
+  color: var(--accent-gold);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: 0.04em;
+}
+
+.launch-financials-tag:hover {
+  background: rgba(229, 169, 59, 0.25);
+  border-color: var(--accent-gold);
+}
+
+
 

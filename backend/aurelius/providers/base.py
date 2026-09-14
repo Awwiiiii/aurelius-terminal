@@ -17,6 +17,11 @@ from datetime import date
 
 from aurelius.domain.entities.company import CompanyProfile
 from aurelius.domain.entities.enums import MarketInterval
+from aurelius.domain.entities.financials import (
+    FinancialStatement,
+    FiscalPeriodType,
+    StatementType,
+)
 from aurelius.domain.entities.market_overview import (
     BenchmarkSnapshot,
     MarketMoverItem,
@@ -211,3 +216,30 @@ class MarketDataProvider(ABC):
             ProviderError: If the provider fails or is unreachable.
         """
         ...
+
+    async def get_financial_statements(
+        self,
+        ticker: str,
+        statement_type: StatementType,
+        frequency: FiscalPeriodType = FiscalPeriodType.ANNUAL,
+    ) -> list[FinancialStatement]:
+        """
+        Retrieve historical financial statements for a corporate equity.
+
+        Default implementation returns an empty list. Providers supporting
+        financial statements should override this method.
+
+        Args:
+            ticker: Normalized ticker symbol (e.g. 'AAPL').
+            statement_type: INCOME_STATEMENT, BALANCE_SHEET, or CASH_FLOW.
+            frequency: ANNUAL or QUARTERLY.
+
+        Returns:
+            List of FinancialStatement domain entities sorted chronologically by period cutoff.
+
+        Raises:
+            InvalidTickerError: If the ticker is malformed.
+            DataNotFoundError: If the security does not exist or has no statement disclosures.
+            ProviderError: If the provider fails or is unreachable.
+        """
+        return []
