@@ -21,6 +21,9 @@ from aurelius.domain.fundamental.engines.growth import GrowthEngine
 from aurelius.domain.fundamental.engines.liquidity import LiquidityEngine
 from aurelius.domain.fundamental.engines.profitability import ProfitabilityEngine
 from aurelius.domain.fundamental.engines.solvency import SolvencyEngine
+from aurelius.domain.fundamental.enums import (
+    DiagnosticCode,
+)
 from aurelius.domain.fundamental.models import (
     FundamentalReport,
     MetricDiagnostic,
@@ -31,6 +34,7 @@ from aurelius.domain.fundamental.period_matching import (
     get_prior_period,
     sort_periods_chronologically,
 )
+from aurelius.domain.fundamental.ttm import TTMEngine
 from aurelius.domain.validation import validate_ticker
 from aurelius.services.financial_statement_service import (
     FinancialStatementService,
@@ -60,14 +64,19 @@ class FundamentalAnalysisService:
         normalized_ticker = validate_ticker(ticker)
 
         # 1. Retrieve all three statement types from M6 service concurrently or sequentially
+        stmt_freq = (
+            FiscalPeriodType.QUARTERLY
+            if frequency == FiscalPeriodType.TTM
+            else frequency
+        )
         income_stmts = await self.statement_service.get_statements(
-            normalized_ticker, StatementType.INCOME_STATEMENT, frequency
+            normalized_ticker, StatementType.INCOME_STATEMENT, stmt_freq
         )
         balance_stmts = await self.statement_service.get_statements(
-            normalized_ticker, StatementType.BALANCE_SHEET, frequency
+            normalized_ticker, StatementType.BALANCE_SHEET, stmt_freq
         )
         cash_flow_stmts = await self.statement_service.get_statements(
-            normalized_ticker, StatementType.CASH_FLOW, frequency
+            normalized_ticker, StatementType.CASH_FLOW, stmt_freq
         )
 
         all_stmts: list[FinancialStatement] = [
@@ -123,7 +132,76 @@ class FundamentalAnalysisService:
                 if d not in all_diagnostics:
                     all_diagnostics.append(d)
 
-        # 6. Process each period chronologically
+        # 6. Branch for TTM frequency
+        if frequency == FiscalPeriodType.TTM:
+            ttm_windows = TTMEngine.find_all_ttm_windows(sorted_periods)
+            if not ttm_windows:
+                return FundamentalReport(
+                    ticker=normalized_ticker,
+                    frequency=frequency,
+                    reporting_currency=reporting_currency or Currency.USD,
+                    periods=[],
+                    metrics={},
+                    diagnostics_summary=[
+                        MetricDiagnostic(
+                            code=DiagnosticCode.INSUFFICIENT_PERIODS_FOR_TTM,
+                            message=(
+                                "Insufficient compatible quarterly periods available to compute TTM "
+                                "(minimum 4 compatible quarters required)."
+                            ),
+                            details={"quarter_count": str(len(sorted_periods))},
+                        )
+                    ],
+                )
+
+            ttm_periods = [w.ttm_period for w in ttm_windows]
+            for w in ttm_windows:
+                # --- DURATION METRICS ---
+                _record(TTMEngine.calculate_ttm_revenue(w, fact_store))
+                _record(TTMEngine.calculate_ttm_gross_profit(w, fact_store))
+                _record(TTMEngine.calculate_ttm_gross_margin(w, fact_store))
+                _record(TTMEngine.calculate_ttm_operating_income(w, fact_store))
+                _record(TTMEngine.calculate_ttm_operating_margin(w, fact_store))
+                _record(TTMEngine.calculate_ttm_net_income(w, fact_store))
+                _record(TTMEngine.calculate_ttm_net_profit_margin(w, fact_store))
+
+                # --- CASH FLOW DURATION METRICS ---
+                _record(TTMEngine.calculate_ttm_cfo(w, fact_store))
+                _record(TTMEngine.calculate_ttm_capex(w, fact_store))
+                _record(TTMEngine.calculate_ttm_fcf(w, fact_store))
+                _record(TTMEngine.calculate_ttm_fcf_margin(w, fact_store))
+                _record(TTMEngine.calculate_ttm_fcf_conversion(w, fact_store))
+                _record(TTMEngine.calculate_ttm_cfo_to_net_income(w, fact_store))
+
+                # --- INSTANT BALANCE SHEET METRICS (at anchor quarter cutoff) ---
+                _record(
+                    LiquidityEngine.calculate_working_capital(w.ttm_period, fact_store)
+                )
+                _record(
+                    LiquidityEngine.calculate_current_ratio(w.ttm_period, fact_store)
+                )
+                _record(LiquidityEngine.calculate_quick_ratio(w.ttm_period, fact_store))
+                _record(LiquidityEngine.calculate_cash_ratio(w.ttm_period, fact_store))
+
+                _record(SolvencyEngine.calculate_gross_debt(w.ttm_period, fact_store))
+                _record(SolvencyEngine.calculate_net_debt(w.ttm_period, fact_store))
+                _record(
+                    SolvencyEngine.calculate_debt_to_equity(w.ttm_period, fact_store)
+                )
+                _record(
+                    SolvencyEngine.calculate_debt_to_assets(w.ttm_period, fact_store)
+                )
+
+            return FundamentalReport(
+                ticker=normalized_ticker,
+                frequency=frequency,
+                reporting_currency=reporting_currency or Currency.USD,
+                periods=ttm_periods,
+                metrics=metrics_by_id,
+                diagnostics_summary=all_diagnostics,
+            )
+
+        # 7. Process each period chronologically (ANNUAL / QUARTERLY)
         for i, current_period in enumerate(sorted_periods):
             # Prior sequential period (prior year for annual, prior quarter for quarterly)
             prior_period = get_prior_period(current_period, sorted_periods, frequency)

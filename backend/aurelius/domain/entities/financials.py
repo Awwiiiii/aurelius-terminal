@@ -64,6 +64,7 @@ class FiscalPeriodType(StrEnum):
 
     ANNUAL = "ANNUAL"
     QUARTERLY = "QUARTERLY"
+    TTM = "TTM"
 
 
 class FiscalPeriodLabel(StrEnum):
@@ -76,6 +77,7 @@ class FiscalPeriodLabel(StrEnum):
     Q2 = "Q2"
     Q3 = "Q3"
     Q4 = "Q4"
+    TTM = "TTM"
 
 
 class Unit(StrEnum):

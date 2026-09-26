@@ -6,7 +6,7 @@
 
 export type StatementType = 'INCOME_STATEMENT' | 'BALANCE_SHEET' | 'CASH_FLOW';
 
-export type FiscalPeriodType = 'ANNUAL' | 'QUARTERLY';
+export type FiscalPeriodType = 'ANNUAL' | 'QUARTERLY' | 'TTM';
 
 export type PeriodType = 'INSTANT' | 'DURATION';
 

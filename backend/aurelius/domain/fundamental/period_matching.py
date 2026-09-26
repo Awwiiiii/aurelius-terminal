@@ -5,6 +5,7 @@ Deterministic period pairing, MultiPeriodFactStore, and strict two-point
 balance sheet averaging infrastructure.
 """
 
+from datetime import date
 from decimal import Decimal
 
 from aurelius.domain.entities.financials import (
@@ -30,11 +31,13 @@ def _is_consecutive_annual(candidate: FinancialPeriod, target: FinancialPeriod) 
         FiscalPeriodLabel.Q2,
         FiscalPeriodLabel.Q3,
         FiscalPeriodLabel.Q4,
+        FiscalPeriodLabel.TTM,
     ) or target.fiscal_period in (
         FiscalPeriodLabel.Q1,
         FiscalPeriodLabel.Q2,
         FiscalPeriodLabel.Q3,
         FiscalPeriodLabel.Q4,
+        FiscalPeriodLabel.TTM,
     ):
         return False
 
@@ -54,10 +57,10 @@ def _is_consecutive_quarter(
     accounting for year-boundary progression (Q1 year Y -> Q4 year Y-1).
     Disallows annual FY periods and non-consecutive quarter gaps.
     """
-    if (
-        candidate.fiscal_period == FiscalPeriodLabel.FY
-        or target.fiscal_period == FiscalPeriodLabel.FY
-    ):
+    if candidate.fiscal_period in (
+        FiscalPeriodLabel.FY,
+        FiscalPeriodLabel.TTM,
+    ) or target.fiscal_period in (FiscalPeriodLabel.FY, FiscalPeriodLabel.TTM):
         return False
 
     if (
@@ -124,12 +127,15 @@ def get_prior_period(
 class MultiPeriodFactStore:
     """
     Indexed in-memory registry of FinancialFact observations across statements and periods.
-    Allows O(1) canonical concept lookups and fallback source concept lookups.
+    Allows O(1) canonical concept lookups, fallback source concept lookups, and conflict detection.
     """
 
     def __init__(self, statements: list[FinancialStatement]) -> None:
         self._canonical_index: dict[
             tuple[StatementType, CanonicalConcept, str], FinancialFact
+        ] = {}
+        self._canonical_facts_multi: dict[
+            tuple[StatementType, CanonicalConcept, str], list[FinancialFact]
         ] = {}
         self._source_index: dict[tuple[StatementType, str, str], FinancialFact] = {}
         self._all_facts: list[FinancialFact] = []
@@ -140,9 +146,11 @@ class MultiPeriodFactStore:
                 self._all_facts.append(fact)
                 st_type = fact.concept.statement_type
                 if fact.concept.canonical_concept is not None:
-                    self._canonical_index[
-                        (st_type, fact.concept.canonical_concept, p_key)
-                    ] = fact
+                    k = (st_type, fact.concept.canonical_concept, p_key)
+                    self._canonical_index[k] = fact
+                    if k not in self._canonical_facts_multi:
+                        self._canonical_facts_multi[k] = []
+                    self._canonical_facts_multi[k].append(fact)
 
                 norm_source = fact.concept.source_concept.strip().lower()
                 self._source_index[(st_type, norm_source, p_key)] = fact
@@ -157,6 +165,43 @@ class MultiPeriodFactStore:
         Retrieve a fact by its exact canonical concept taxonomy.
         """
         return self._canonical_index.get((statement_type, concept, period_key))
+
+    def get_canonical_fact_checked(
+        self,
+        statement_type: StatementType,
+        concept: CanonicalConcept,
+        period_key: str,
+    ) -> tuple[FinancialFact | None, MetricDiagnostic | None]:
+        """
+        Retrieve a canonical fact while checking for duplicate/conflicting facts.
+        If multiple facts exist:
+          - If values are identical -> returns the fact (clean deterministic resolution).
+          - If values differ -> returns None with CONFLICTING_PERIOD_FACTS diagnostic.
+        """
+        key = (statement_type, concept, period_key)
+        facts = self._canonical_facts_multi.get(key, [])
+        if not facts:
+            return None, None
+        if len(facts) == 1:
+            return facts[0], None
+
+        first_val = facts[0].value
+        for f in facts[1:]:
+            if f.value != first_val:
+                diag = MetricDiagnostic(
+                    code=DiagnosticCode.CONFLICTING_PERIOD_FACTS,
+                    message=(
+                        f"Conflicting facts with disparate values detected for "
+                        f"concept '{concept.value}' in period '{period_key}'."
+                    ),
+                    details={
+                        "concept": concept.value,
+                        "period": period_key,
+                        "values": ", ".join(str(f.value) for f in facts),
+                    },
+                )
+                return None, diag
+        return facts[0], None
 
     def get_source_fact(
         self,
@@ -182,12 +227,10 @@ def sort_periods_chronologically(
     Sort financial periods in ascending chronological order.
     """
 
-    def _sort_key(p: FinancialPeriod) -> tuple[int, int, str]:
-        # Sort primarily by fiscal year (or calendar year), then month/day
-        yr = p.fiscal_year or p.calendar_year or 0
-        cutoff = p.instant_date or p.end_date
-        d_str = cutoff.isoformat() if cutoff else ""
-        return (yr, cutoff.month if cutoff else 0, d_str)
+    def _sort_key(p: FinancialPeriod) -> tuple[date, int, str]:
+        cutoff = p.instant_date or p.end_date or date.min
+        yr = p.fiscal_year or p.calendar_year or cutoff.year
+        return (cutoff, yr, p.period_key)
 
     return sorted(periods, key=_sort_key)
 

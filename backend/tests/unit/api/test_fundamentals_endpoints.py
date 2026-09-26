@@ -99,3 +99,72 @@ def test_get_fundamentals_endpoint():
         )
     finally:
         app.dependency_overrides.pop(get_fundamental_analysis_service, None)
+
+
+def test_get_fundamentals_endpoint_ttm():
+    client = TestClient(app)
+
+    ttm_p = FinancialPeriod(
+        period_type=PeriodType.DURATION,
+        start_date=date(2024, 1, 1),
+        end_date=date(2024, 12, 31),
+        fiscal_year=2024,
+        fiscal_period=FiscalPeriodLabel.TTM,
+    )
+
+    mock_report = FundamentalReport(
+        ticker="AAPL",
+        frequency=FiscalPeriodType.TTM,
+        reporting_currency=Currency.USD,
+        periods=[ttm_p],
+        metrics={
+            FundamentalMetricId.REVENUE.value: [
+                MetricResult(
+                    metric_id=FundamentalMetricId.REVENUE,
+                    category=MetricCategory.GROWTH,
+                    status=MetricStatus.VALID,
+                    value=Decimal("400000000"),
+                    unit=Unit.CURRENCY,
+                    currency=Currency.USD,
+                    period=ttm_p,
+                    diagnostics=[],
+                    provenance=MetricProvenance(
+                        formula_id="FORMULA_TTM_REVENUE",
+                        source_fact_ids=["f1", "f2", "f3", "f4"],
+                        source_concepts=["REVENUE"],
+                        source_periods=[
+                            "2024-03-31",
+                            "2024-06-30",
+                            "2024-09-30",
+                            "2024-12-31",
+                        ],
+                        methodology_notes="TTM_4_QUARTERS: Sum of four compatible quarterly facts.",
+                    ),
+                )
+            ]
+        },
+        diagnostics_summary=[],
+    )
+
+    mock_service = AsyncMock(spec=FundamentalAnalysisService)
+    mock_service.get_fundamental_report.return_value = mock_report
+
+    app.dependency_overrides[get_fundamental_analysis_service] = lambda: mock_service
+    try:
+        response = client.get(
+            "/api/v1/market/financials/AAPL/fundamentals",
+            params={"frequency": "TTM"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ticker"] == "AAPL"
+        assert data["frequency"] == "TTM"
+        assert len(data["periods"]) == 1
+        assert data["periods"][0]["display_label"] == "TTM (2024-12-31)"
+        assert "REVENUE" in data["metrics"]
+        m_item = data["metrics"]["REVENUE"][0]
+        assert m_item["status"] == "VALID"
+        assert m_item["provenance"]["formula_id"] == "FORMULA_TTM_REVENUE"
+        assert len(m_item["provenance"]["source_fact_ids"]) == 4
+    finally:
+        app.dependency_overrides.pop(get_fundamental_analysis_service, None)

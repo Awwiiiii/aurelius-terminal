@@ -29,6 +29,7 @@ from aurelius.api.v1.schemas.fundamental import (
 )
 from aurelius.domain.entities.financials import (
     FinancialPeriod,
+    FiscalPeriodLabel,
     FiscalPeriodType,
     PeriodType,
     StatementType,
@@ -51,7 +52,13 @@ def _to_period_schema(period: FinancialPeriod) -> FinancialPeriodSchema:
     """
     Format domain FinancialPeriod into transport schema with clear display label.
     """
-    if period.fiscal_period and period.fiscal_year:
+    if period.fiscal_period == FiscalPeriodLabel.TTM:
+        display = (
+            f"TTM ({period.end_date.isoformat()})"
+            if period.end_date
+            else f"TTM {period.fiscal_year or ''}".strip()
+        )
+    elif period.fiscal_period and period.fiscal_year:
         display = f"{period.fiscal_period.value} {period.fiscal_year}"
     elif period.calendar_year:
         display = f"CY {period.calendar_year}"
@@ -206,7 +213,7 @@ async def get_fundamentals(
     ],
     frequency: Annotated[
         FiscalPeriodType,
-        Query(description="Reporting frequency: ANNUAL or QUARTERLY."),
+        Query(description="Reporting frequency: ANNUAL, QUARTERLY, or TTM."),
     ] = FiscalPeriodType.ANNUAL,
     allow_point_in_time_fallback: Annotated[
         bool,
