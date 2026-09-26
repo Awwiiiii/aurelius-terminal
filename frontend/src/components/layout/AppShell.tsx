@@ -3,9 +3,9 @@ import React from 'react';
 interface AppShellProps {
   children: React.ReactNode;
   headerCenter?: React.ReactNode;
-  activeView?: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS';
+  activeView?: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS' | 'FUNDAMENTALS';
   onViewChange?: (
-    view: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS'
+    view: 'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS' | 'FUNDAMENTALS'
   ) => void;
 }
 
@@ -68,6 +68,14 @@ export const AppShell: React.FC<AppShellProps> = ({
           >
             <span className="mode-btn-icon">▤</span>
             <span>FINANCIAL STATEMENTS</span>
+          </button>
+          <button
+            type="button"
+            className={`mode-switch-btn ${activeView === 'FUNDAMENTALS' ? 'active' : ''}`}
+            onClick={() => onViewChange && onViewChange('FUNDAMENTALS')}
+          >
+            <span className="mode-btn-icon">☷</span>
+            <span>FUNDAMENTAL ANALYSIS</span>
           </button>
         </div>
 

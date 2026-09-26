@@ -6,6 +6,7 @@ import { CompanyProfileCard } from './components/company/CompanyProfileCard';
 import { SecurityHeader } from './components/company/SecurityHeader';
 import { HistoricalAnalysisView } from './components/historical/HistoricalAnalysisView';
 import { FinancialStatementsView } from './components/financials/FinancialStatementsView';
+import { FundamentalAnalysisView } from './components/fundamental/FundamentalAnalysisView';
 import { AppShell } from './components/layout/AppShell';
 import { OHLCVTable } from './components/market/OHLCVTable';
 import { QuoteCard } from './components/market/QuoteCard';
@@ -19,7 +20,7 @@ import type { OHLCVResponse, QuoteResponse } from './types/market';
 
 export function App() {
   const [activeView, setActiveView] = useState<
-    'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS'
+    'OVERVIEW' | 'RESEARCH' | 'HISTORICAL' | 'QUANTITATIVE' | 'FINANCIALS' | 'FUNDAMENTALS'
   >('OVERVIEW');
   const [ticker, setTicker] = useState<string>('AAPL');
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
@@ -79,6 +80,11 @@ export function App() {
     setActiveView('FINANCIALS');
   };
 
+  const handleLaunchFundamentals = (newTicker: string) => {
+    setTicker(newTicker);
+    setActiveView('FUNDAMENTALS');
+  };
+
   return (
     <AppShell
       activeView={activeView}
@@ -99,6 +105,11 @@ export function App() {
         />
       ) : activeView === 'FINANCIALS' ? (
         <FinancialStatementsView
+          initialTicker={ticker}
+          onSelectTicker={(s) => setTicker(s)}
+        />
+      ) : activeView === 'FUNDAMENTALS' ? (
+        <FundamentalAnalysisView
           initialTicker={ticker}
           onSelectTicker={(s) => setTicker(s)}
         />
@@ -128,6 +139,7 @@ export function App() {
               onLaunchHistorical={handleLaunchHistorical}
               onLaunchQuantitative={handleLaunchQuantitative}
               onLaunchFinancials={handleLaunchFinancials}
+              onLaunchFundamentals={handleLaunchFundamentals}
             />
           )}
 

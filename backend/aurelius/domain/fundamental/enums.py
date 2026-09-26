@@ -1,0 +1,121 @@
+"""
+aurelius.domain.fundamental.enums
+=================================
+Enumerations for fundamental analysis metrics, categories, operational statuses,
+and auditable diagnostic codes.
+"""
+
+from enum import StrEnum
+
+
+class MetricCategory(StrEnum):
+    """
+    Core fundamental analysis analytical categories.
+    """
+
+    GROWTH = "GROWTH"
+    PROFITABILITY = "PROFITABILITY"
+    LIQUIDITY = "LIQUIDITY"
+    SOLVENCY = "SOLVENCY"
+    EFFICIENCY = "EFFICIENCY"
+    CASH_FLOW = "CASH_FLOW"
+
+
+class MetricStatus(StrEnum):
+    """
+    Operational status of a derived fundamental metric result.
+    VALID: Metric calculated successfully according to canonical methodology.
+    UNAVAILABLE: Missing required inputs or insufficient period history.
+    NOT_APPLICABLE: Concept not applicable to entity structure (e.g. unclassified balance sheet).
+    DISTORTED: Mathematically invalid or economically misleading (e.g. negative equity, zero division).
+    """
+
+    VALID = "VALID"
+    UNAVAILABLE = "UNAVAILABLE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    DISTORTED = "DISTORTED"
+
+
+class DiagnosticCode(StrEnum):
+    """
+    Standardized machine-readable diagnostic codes for fundamental analysis.
+    """
+
+    # Presence & Structure
+    MISSING_REQUIRED_FACT = "MISSING_REQUIRED_FACT"
+    MISSING_PRIOR_PERIOD = "MISSING_PRIOR_PERIOD"
+    INSUFFICIENT_PERIODS_FOR_AVERAGE = "INSUFFICIENT_PERIODS_FOR_AVERAGE"
+    PERIOD_ALIGNMENT_MISMATCH = "PERIOD_ALIGNMENT_MISMATCH"
+    UNCLASSIFIED_BALANCE_SHEET = "UNCLASSIFIED_BALANCE_SHEET"
+    SHORT_TERM_DEBT_UNAVAILABLE = "SHORT_TERM_DEBT_UNAVAILABLE"
+    LONG_TERM_DEBT_UNAVAILABLE = "LONG_TERM_DEBT_UNAVAILABLE"
+
+    # Mathematical & Denominator Semantics
+    ZERO_DIVISION = "ZERO_DIVISION"
+    NEGATIVE_OR_ZERO_EQUITY = "NEGATIVE_OR_ZERO_EQUITY"
+    NEGATIVE_OR_ZERO_EBITDA = "NEGATIVE_OR_ZERO_EBITDA"
+    ZERO_OR_NEGATIVE_REVENUE = "ZERO_OR_NEGATIVE_REVENUE"
+    NEGATIVE_NET_INCOME = "NEGATIVE_NET_INCOME"
+    NEGATIVE_BASE_REVENUE = "NEGATIVE_BASE_REVENUE"
+    ZERO_INTEREST_EXPENSE = "ZERO_INTEREST_EXPENSE"
+    INVALID_INTEREST_SIGN = "INVALID_INTEREST_SIGN"
+
+    # Warnings & Operational Notes
+    NEGATIVE_EBIT_WARNING = "NEGATIVE_EBIT_WARNING"
+    POINT_IN_TIME_DENOMINATOR_FALLBACK = "POINT_IN_TIME_DENOMINATOR_FALLBACK"
+    CURRENCY_MISMATCH = "CURRENCY_MISMATCH"
+    NON_REPORTED_EBITDA_RESTRICTION = "NON_REPORTED_EBITDA_RESTRICTION"
+
+
+class FundamentalMetricId(StrEnum):
+    """
+    Standardized identifiers for all canonical M7A fundamental metrics.
+    """
+
+    # --- Growth ---
+    REVENUE_GROWTH_YOY = "REVENUE_GROWTH_YOY"
+    REVENUE_GROWTH_QOQ = "REVENUE_GROWTH_QOQ"
+
+    # --- Profitability ---
+    GROSS_PROFIT = "GROSS_PROFIT"
+    GROSS_PROFIT_MARGIN = "GROSS_PROFIT_MARGIN"
+    OPERATING_INCOME = "OPERATING_INCOME"
+    OPERATING_MARGIN = "OPERATING_MARGIN"
+    NET_INCOME = "NET_INCOME"
+    NET_PROFIT_MARGIN = "NET_PROFIT_MARGIN"
+    RETURN_ON_ASSETS = "RETURN_ON_ASSETS"
+    RETURN_ON_EQUITY = "RETURN_ON_EQUITY"
+    EBITDA_MARGIN = "EBITDA_MARGIN"
+
+    # --- Liquidity ---
+    WORKING_CAPITAL = "WORKING_CAPITAL"
+    CURRENT_RATIO = "CURRENT_RATIO"
+    QUICK_RATIO = "QUICK_RATIO"
+    CASH_RATIO = "CASH_RATIO"
+
+    # --- Solvency ---
+    GROSS_DEBT = "GROSS_DEBT"
+    NET_DEBT = "NET_DEBT"
+    DEBT_TO_EQUITY = "DEBT_TO_EQUITY"
+    DEBT_TO_ASSETS = "DEBT_TO_ASSETS"
+    INTEREST_COVERAGE = "INTEREST_COVERAGE"
+    DEBT_TO_EBITDA = "DEBT_TO_EBITDA"
+    NET_DEBT_TO_EBITDA = "NET_DEBT_TO_EBITDA"
+
+    # --- Efficiency ---
+    ASSET_TURNOVER = "ASSET_TURNOVER"
+    RECEIVABLES_TURNOVER = "RECEIVABLES_TURNOVER"
+    INVENTORY_TURNOVER = "INVENTORY_TURNOVER"
+    PAYABLES_TURNOVER = "PAYABLES_TURNOVER"
+    DAYS_SALES_OUTSTANDING = "DAYS_SALES_OUTSTANDING"
+    DAYS_INVENTORY_OUTSTANDING = "DAYS_INVENTORY_OUTSTANDING"
+    DAYS_PAYABLE_OUTSTANDING = "DAYS_PAYABLE_OUTSTANDING"
+    CASH_CONVERSION_CYCLE = "CASH_CONVERSION_CYCLE"
+
+    # --- Cash Flow ---
+    OPERATING_CASH_FLOW = "OPERATING_CASH_FLOW"
+    CAPITAL_EXPENDITURES = "CAPITAL_EXPENDITURES"
+    FREE_CASH_FLOW = "FREE_CASH_FLOW"
+    FCF_MARGIN = "FCF_MARGIN"
+    FCF_CONVERSION = "FCF_CONVERSION"
+    CFO_TO_NET_INCOME = "CFO_TO_NET_INCOME"

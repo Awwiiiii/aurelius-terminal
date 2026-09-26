@@ -7,6 +7,7 @@ interface SecurityHeaderProps {
   onLaunchHistorical?: (ticker: string) => void;
   onLaunchQuantitative?: (ticker: string) => void;
   onLaunchFinancials?: (ticker: string) => void;
+  onLaunchFundamentals?: (ticker: string) => void;
 }
 
 export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
@@ -15,6 +16,7 @@ export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
   onLaunchHistorical,
   onLaunchQuantitative,
   onLaunchFinancials,
+  onLaunchFundamentals,
 }) => {
   return (
     <div className="security-header-panel">
@@ -81,6 +83,16 @@ export const SecurityHeader: React.FC<SecurityHeaderProps> = ({
               title="Launch financial statement infrastructure disclosures for this security"
             >
               ▤ FINANCIALS
+            </button>
+          )}
+          {onLaunchFundamentals && (
+            <button
+              type="button"
+              className="security-action-tag launch-fundamentals-tag"
+              onClick={() => onLaunchFundamentals(security.ticker)}
+              title="Launch canonical fundamental analysis and financial ratios for this security"
+            >
+              ☷ FUNDAMENTALS
             </button>
           )}
         </div>

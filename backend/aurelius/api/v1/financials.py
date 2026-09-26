@@ -21,6 +21,12 @@ from aurelius.api.v1.schemas.financials import (
     FinancialStatementMatrixResponse,
     FinancialStatementResponse,
 )
+from aurelius.api.v1.schemas.fundamental import (
+    FundamentalReportResponse,
+    MetricDiagnosticSchema,
+    MetricProvenanceSchema,
+    MetricResultSchema,
+)
 from aurelius.domain.entities.financials import (
     FinancialPeriod,
     FiscalPeriodType,
@@ -30,6 +36,10 @@ from aurelius.domain.entities.financials import (
 from aurelius.services.financial_statement_service import (
     FinancialStatementService,
     get_financial_statement_service,
+)
+from aurelius.services.fundamental_service import (
+    FundamentalAnalysisService,
+    get_fundamental_analysis_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -177,4 +187,99 @@ async def get_financial_statement_matrix(
         currency=matrix.currency,
         periods=periods_schema,
         rows=rows_schema,
+    )
+
+
+@router.get(
+    "/{ticker}/fundamentals",
+    response_model=FundamentalReportResponse,
+    summary="Get Fundamental Analysis",
+    description=(
+        "Retrieve canonical fundamental analysis metrics and financial ratios across "
+        "growth, profitability, liquidity, solvency, efficiency, and cash flow."
+    ),
+)
+async def get_fundamentals(
+    ticker: Annotated[
+        str,
+        Path(description="Listing ticker symbol (e.g. 'AAPL')."),
+    ],
+    frequency: Annotated[
+        FiscalPeriodType,
+        Query(description="Reporting frequency: ANNUAL or QUARTERLY."),
+    ] = FiscalPeriodType.ANNUAL,
+    allow_point_in_time_fallback: Annotated[
+        bool,
+        Query(
+            description=(
+                "If True, allows point-in-time ending balance sheet fallback when prior period is missing. "
+                "Default is False (strict two-point averaging)."
+            )
+        ),
+    ] = False,
+    service: Annotated[
+        FundamentalAnalysisService,
+        Depends(get_fundamental_analysis_service),
+    ] = None,  # type: ignore[assignment]
+) -> FundamentalReportResponse:
+    report = await service.get_fundamental_report(
+        ticker=ticker,
+        frequency=frequency,
+        allow_point_in_time_fallback=allow_point_in_time_fallback,
+    )
+
+    periods_schema = [_to_period_schema(p) for p in report.periods]
+    metrics_schema: dict[str, list[MetricResultSchema]] = {}
+
+    for metric_id, results in report.metrics.items():
+        metrics_schema[metric_id] = [
+            MetricResultSchema(
+                metric_id=r.metric_id.value,
+                category=r.category.value,
+                status=r.status.value,
+                value=r.value,
+                formatted_value=r.formatted_value,
+                unit=r.unit.value,
+                currency=r.currency.value if r.currency else None,
+                period_key=r.period.period_key,
+                is_derived=r.is_derived,
+                diagnostics=[
+                    MetricDiagnosticSchema(
+                        code=d.code.value,
+                        message=d.message,
+                        details=d.details,
+                    )
+                    for d in r.diagnostics
+                ],
+                provenance=MetricProvenanceSchema(
+                    formula_id=r.provenance.formula_id,
+                    methodology_version=r.provenance.methodology_version,
+                    source_fact_ids=r.provenance.source_fact_ids,
+                    source_concepts=r.provenance.source_concepts,
+                    source_periods=r.provenance.source_periods,
+                    provider=r.provenance.provider,
+                    methodology_notes=r.provenance.methodology_notes,
+                ),
+            )
+            for r in results
+        ]
+
+    diagnostics_schema = [
+        MetricDiagnosticSchema(
+            code=d.code.value,
+            message=d.message,
+            details=d.details,
+        )
+        for d in report.diagnostics_summary
+    ]
+
+    return FundamentalReportResponse(
+        ticker=report.ticker,
+        frequency=report.frequency.value,
+        reporting_currency=report.reporting_currency.value
+        if report.reporting_currency
+        else None,
+        periods=periods_schema,
+        metrics=metrics_schema,
+        diagnostics_summary=diagnostics_schema,
     )
