@@ -112,6 +112,7 @@ export function App() {
         <FundamentalAnalysisView
           initialTicker={ticker}
           onSelectTicker={(s) => setTicker(s)}
+          onLaunchFinancials={handleLaunchFinancials}
         />
       ) : (
         <>

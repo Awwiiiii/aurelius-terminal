@@ -59,20 +59,62 @@ export function formatMarketCap(
   if (marketCap === null || marketCap === undefined || marketCap === '') {
     return '—';
   }
-  const num = typeof marketCap === 'string' ? parseFloat(marketCap) : marketCap;
+  const cleanStr =
+    typeof marketCap === 'string'
+      ? marketCap.replace(/[$,]/g, '').trim()
+      : marketCap;
+  const num = typeof cleanStr === 'string' ? parseFloat(cleanStr) : cleanStr;
   if (isNaN(num)) {
     return String(marketCap);
   }
-  if (num >= 1e12) {
-    return `$${(num / 1e12).toFixed(2)}T`;
+  const isNegative = num < 0;
+  const abs = Math.abs(num);
+  const sign = isNegative ? '-' : '';
+
+  if (abs >= 1e12) {
+    return `${sign}$${(abs / 1e12).toFixed(2)}T`;
   }
-  if (num >= 1e9) {
-    return `$${(num / 1e9).toFixed(2)}B`;
+  if (abs >= 1e9) {
+    return `${sign}$${(abs / 1e9).toFixed(2)}B`;
   }
-  if (num >= 1e6) {
-    return `$${(num / 1e6).toFixed(2)}M`;
+  if (abs >= 1e6) {
+    return `${sign}$${(abs / 1e6).toFixed(2)}M`;
   }
-  return `$${new Intl.NumberFormat('en-US').format(Math.round(num))}`;
+  if (abs >= 1e3) {
+    return `${sign}$${(abs / 1e3).toFixed(2)}K`;
+  }
+  return `${sign}$${new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(abs)}`;
+}
+
+/**
+ * Display-only formatter for institutional financial values.
+ * Preserves percentages, ratios, days, and formats large/small currency quantities
+ * into canonical compact terminal notation ($112.28B, $135.05B, etc.).
+ */
+export function formatCompactFinancialValue(
+  value: string | number | null | undefined,
+  unit?: string
+): string {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  const strVal = String(value).trim();
+  if (strVal === '—' || strVal === 'UNAVAILABLE' || strVal === 'NOT_APPLICABLE') {
+    return '—';
+  }
+  if (unit === 'PERCENT' || strVal.endsWith('%')) {
+    return strVal;
+  }
+  if (unit === 'DAYS' || strVal.includes('days')) {
+    return strVal;
+  }
+  if (unit === 'RATIO' || strVal.endsWith('x')) {
+    return strVal;
+  }
+  return formatMarketCap(value);
 }
 
 export function formatDate(dateStr: string): string {

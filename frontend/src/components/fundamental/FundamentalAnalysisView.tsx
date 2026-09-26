@@ -7,6 +7,7 @@ import type {
 } from '../../types/fundamental';
 import { ErrorMessage } from '../ui/ErrorMessage';
 import { TickerInput } from '../ui/TickerInput';
+import { AdvancedFundamentalsWorkspace } from './AdvancedFundamentalsWorkspace';
 import {
   MetricCategorySection,
   type MetricDefinition,
@@ -16,6 +17,7 @@ import { ProvenanceModal } from './ProvenanceModal';
 interface Props {
   initialTicker?: string;
   onSelectTicker?: (ticker: string) => void;
+  onLaunchFinancials?: (ticker: string) => void;
 }
 
 const GROWTH_METRICS: MetricDefinition[] = [
@@ -246,8 +248,10 @@ const CASH_FLOW_METRICS: MetricDefinition[] = [
 export const FundamentalAnalysisView: React.FC<Props> = ({
   initialTicker = 'AAPL',
   onSelectTicker,
+  onLaunchFinancials,
 }) => {
   const [ticker, setTicker] = useState<string>(initialTicker);
+  const [workspaceSection, setWorkspaceSection] = useState<'CORE_RATIOS' | 'ADVANCED'>('ADVANCED');
   const [frequency, setFrequency] = useState<FiscalPeriodType>('ANNUAL');
   const [allowFallback, setAllowFallback] = useState<boolean>(false);
   const [report, setReport] = useState<FundamentalReportResponse | null>(null);
@@ -279,8 +283,10 @@ export const FundamentalAnalysisView: React.FC<Props> = ({
   );
 
   useEffect(() => {
-    loadData(ticker, frequency, allowFallback);
-  }, [ticker, frequency, allowFallback, loadData]);
+    if (workspaceSection === 'CORE_RATIOS') {
+      loadData(ticker, frequency, allowFallback);
+    }
+  }, [ticker, frequency, allowFallback, workspaceSection, loadData]);
 
   const handleSelectTicker = (newTicker: string) => {
     const clean = newTicker.trim().toUpperCase();
@@ -296,176 +302,227 @@ export const FundamentalAnalysisView: React.FC<Props> = ({
 
   return (
     <div className="fundamental-view-layout">
-      {/* Header controls bar */}
-      <div className="fundamental-header-panel">
-        <div className="fundamental-controls-left">
+      {/* Top Workspace Header Bar */}
+      <div className="fundamental-workspace-tabs-bar">
+        <div className="workspace-tab-left">
+          <span className="workspace-title-badge">FUNDAMENTAL ANALYSIS</span>
+          <div className="workspace-tab-buttons">
+            <button
+              type="button"
+              id="tab-core-ratios"
+              className={`workspace-tab-btn ${workspaceSection === 'CORE_RATIOS' ? 'active' : ''}`}
+              onClick={() => setWorkspaceSection('CORE_RATIOS')}
+            >
+              Overview / Core Ratios
+            </button>
+            <button
+              type="button"
+              id="tab-advanced-analytics"
+              className={`workspace-tab-btn ${workspaceSection === 'ADVANCED' ? 'active' : ''}`}
+              onClick={() => setWorkspaceSection('ADVANCED')}
+            >
+              Advanced Analytics
+            </button>
+            <button
+              type="button"
+              id="tab-financial-statements"
+              className="workspace-tab-btn"
+              onClick={() => {
+                if (onLaunchFinancials) {
+                  onLaunchFinancials(ticker);
+                }
+              }}
+            >
+              Financial Statements ↗
+            </button>
+          </div>
+        </div>
+
+        <div className="workspace-tab-right">
           <TickerInput
             currentTicker={ticker}
             onSelectTicker={handleSelectTicker}
             isLoading={isLoading}
           />
         </div>
+      </div>
 
-        <div className="fundamental-controls-right">
-          <div className="frequency-toggle-buttons">
-            <button
-              type="button"
-              className={`freq-btn ${frequency === 'ANNUAL' ? 'active' : ''}`}
-              onClick={() => setFrequency('ANNUAL')}
-            >
-              ANNUAL
-            </button>
-            <button
-              type="button"
-              className={`freq-btn ${frequency === 'QUARTERLY' ? 'active' : ''}`}
-              onClick={() => setFrequency('QUARTERLY')}
-            >
-              QUARTERLY
-            </button>
+      {/* RENDER ACTIVE WORKSPACE SECTION */}
+      {workspaceSection === 'ADVANCED' ? (
+        <AdvancedFundamentalsWorkspace ticker={ticker} />
+      ) : (
+        <>
+          {/* M7A Header controls bar */}
+          <div className="fundamental-header-panel">
+            <div className="fundamental-controls-left">
+              <span className="section-context-label">CANONICAL RATIO MATRIX:</span>
+            </div>
+
+            <div className="fundamental-controls-right">
+              <div className="frequency-toggle-buttons">
+                <button
+                  type="button"
+                  className={`freq-btn ${frequency === 'ANNUAL' ? 'active' : ''}`}
+                  onClick={() => setFrequency('ANNUAL')}
+                >
+                  ANNUAL
+                </button>
+                <button
+                  type="button"
+                  className={`freq-btn ${frequency === 'QUARTERLY' ? 'active' : ''}`}
+                  onClick={() => setFrequency('QUARTERLY')}
+                >
+                  QUARTERLY
+                </button>
+              </div>
+
+              <label
+                className="fallback-toggle-label"
+                title="Enable point-in-time denominator fallback when prior balance sheet is unavailable"
+              >
+                <input
+                  type="checkbox"
+                  className="fallback-checkbox"
+                  checked={allowFallback}
+                  onChange={(e) => setAllowFallback(e.target.checked)}
+                />
+                <span className="fallback-text">POINT-IN-TIME FALLBACK</span>
+              </label>
+            </div>
           </div>
 
-          <label className="fallback-toggle-label" title="Enable point-in-time denominator fallback when prior balance sheet is unavailable">
-            <input
-              type="checkbox"
-              className="fallback-checkbox"
-              checked={allowFallback}
-              onChange={(e) => setAllowFallback(e.target.checked)}
+          {/* Institutional Methodology Bar */}
+          <div className="methodology-callout fundamental-methodology-banner">
+            <div className="callout-title">
+              <span className="callout-icon">◈</span>
+              <span>INSTITUTIONAL METHODOLOGY ENGINE (M7A)</span>
+            </div>
+            <div className="callout-list">
+              <div>
+                • <strong>Strict Two-Point Average:</strong> Flow/balance ratios (ROA, ROE, Turnovers, Days metrics) enforce authoritative two-point balance sheet averaging <code>(t + t-1) / 2</code> across strictly consecutive periods.
+              </div>
+              <div>
+                • <strong>Frequency-Aware Duration:</strong> Efficiency days metrics (DSO, DIO, DPO) compute exact calendar duration days <code>(end_date - start_date) + 1</code> rather than static 365-day approximations.
+              </div>
+              <div>
+                • <strong>Canonical Gross Debt:</strong> Evaluates explicit funded debt components (ST + LT) with audited fallback hierarchy; non-debt liabilities are strictly excluded.
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <ErrorMessage
+              error={error}
+              onRetry={() => loadData(ticker, frequency, allowFallback)}
             />
-            <span className="fallback-text">POINT-IN-TIME FALLBACK</span>
-          </label>
-        </div>
-      </div>
+          )}
 
-      {/* Institutional Methodology Bar */}
-      <div className="methodology-callout fundamental-methodology-banner">
-        <div className="callout-title">
-          <span className="callout-icon">◈</span>
-          <span>INSTITUTIONAL METHODOLOGY ENGINE (M7A)</span>
-        </div>
-        <div className="callout-list">
-          <div>
-            • <strong>Strict Two-Point Average:</strong> Flow/balance ratios (ROA, ROE, Turnovers, Days metrics) enforce authoritative two-point balance sheet averaging <code>(t + t-1) / 2</code> across strictly consecutive periods.
-          </div>
-          <div>
-            • <strong>Frequency-Aware Duration:</strong> Efficiency days metrics (DSO, DIO, DPO) compute exact calendar duration days <code>(end_date - start_date) + 1</code> rather than static 365-day approximations.
-          </div>
-          <div>
-            • <strong>Canonical Gross Debt:</strong> Evaluates explicit funded debt components (ST + LT) with audited fallback hierarchy; non-debt liabilities are strictly excluded.
-          </div>
-        </div>
-      </div>
+          {isLoading && (
+            <div className="financials-loading-state">
+              <span className="loading-spinner">◈</span>
+              COMPUTING {frequency} CANONICAL FINANCIAL RATIOS FOR {ticker}...
+            </div>
+          )}
 
-      {error && (
-        <ErrorMessage
-          error={error}
-          onRetry={() => loadData(ticker, frequency, allowFallback)}
-        />
-      )}
+          {!isLoading && !error && report && report.periods.length === 0 && (
+            <div className="financials-empty-state">
+              <span className="empty-icon">▤</span>
+              <div className="empty-title">NO FINANCIAL STATEMENTS AVAILABLE</div>
+              <div className="empty-desc">
+                No income statement, balance sheet, or cash flow filings were discovered for {ticker} under {frequency} frequency.
+              </div>
+            </div>
+          )}
 
-      {isLoading && (
-        <div className="financials-loading-state">
-          <span className="loading-spinner">◈</span>
-          COMPUTING {frequency} CANONICAL FINANCIAL RATIOS FOR {ticker}...
-        </div>
-      )}
+          {!isLoading && !error && report && report.periods.length > 0 && (
+            <div className="fundamental-content-container">
+              {/* Quick jump navigation */}
+              <div className="category-jump-nav">
+                <a href="#category-growth" className="jump-link">GROWTH</a>
+                <a href="#category-profitability" className="jump-link">PROFITABILITY</a>
+                <a href="#category-liquidity" className="jump-link">LIQUIDITY</a>
+                <a href="#category-solvency" className="jump-link">SOLVENCY</a>
+                <a href="#category-efficiency" className="jump-link">EFFICIENCY</a>
+                <a href="#category-cash_flow" className="jump-link">CASH FLOW</a>
+              </div>
 
-      {!isLoading && !error && report && report.periods.length === 0 && (
-        <div className="financials-empty-state">
-          <span className="empty-icon">▤</span>
-          <div className="empty-title">NO FINANCIAL STATEMENTS AVAILABLE</div>
-          <div className="empty-desc">
-            No income statement, balance sheet, or cash flow filings were discovered for {ticker} under {frequency} frequency.
-          </div>
-        </div>
-      )}
+              {/* 1. Growth */}
+              <MetricCategorySection
+                category="GROWTH"
+                title="Revenue & Growth Dynamics"
+                description="Normalized top-line expansion dynamics across consecutive annual and quarterly reporting periods."
+                metricDefs={GROWTH_METRICS}
+                periods={report.periods}
+                metrics={report.metrics}
+                onInspectMetric={handleInspectMetric}
+              />
 
-      {!isLoading && !error && report && report.periods.length > 0 && (
-        <div className="fundamental-content-container">
-          {/* Quick jump navigation */}
-          <div className="category-jump-nav">
-            <a href="#category-growth" className="jump-link">GROWTH</a>
-            <a href="#category-profitability" className="jump-link">PROFITABILITY</a>
-            <a href="#category-liquidity" className="jump-link">LIQUIDITY</a>
-            <a href="#category-solvency" className="jump-link">SOLVENCY</a>
-            <a href="#category-efficiency" className="jump-link">EFFICIENCY</a>
-            <a href="#category-cash_flow" className="jump-link">CASH FLOW</a>
-          </div>
+              {/* 2. Profitability */}
+              <MetricCategorySection
+                category="PROFITABILITY"
+                title="Profitability & Returns on Capital"
+                description="Multi-tier operating margins and canonical two-point capital productivity returns (ROA, ROE)."
+                metricDefs={PROFITABILITY_METRICS}
+                periods={report.periods}
+                metrics={report.metrics}
+                onInspectMetric={handleInspectMetric}
+              />
 
-          {/* 1. Growth */}
-          <MetricCategorySection
-            category="GROWTH"
-            title="Revenue & Growth Dynamics"
-            description="Normalized top-line expansion dynamics across consecutive annual and quarterly reporting periods."
-            metricDefs={GROWTH_METRICS}
-            periods={report.periods}
-            metrics={report.metrics}
-            onInspectMetric={handleInspectMetric}
-          />
+              {/* 3. Liquidity */}
+              <MetricCategorySection
+                category="LIQUIDITY"
+                title="Short-Term Liquidity & Capital Coverage"
+                description="Classified working capital buffers, current ratios, and immediate cash availability metrics."
+                metricDefs={LIQUIDITY_METRICS}
+                periods={report.periods}
+                metrics={report.metrics}
+                onInspectMetric={handleInspectMetric}
+              />
 
-          {/* 2. Profitability */}
-          <MetricCategorySection
-            category="PROFITABILITY"
-            title="Profitability & Returns on Capital"
-            description="Multi-tier operating margins and canonical two-point capital productivity returns (ROA, ROE)."
-            metricDefs={PROFITABILITY_METRICS}
-            periods={report.periods}
-            metrics={report.metrics}
-            onInspectMetric={handleInspectMetric}
-          />
+              {/* 4. Solvency */}
+              <MetricCategorySection
+                category="SOLVENCY"
+                title="Long-Term Capital Structure & Solvency"
+                description="Funded debt resolution, debt burdens, interest servicing coverage, and leverage capacity."
+                metricDefs={SOLVENCY_METRICS}
+                periods={report.periods}
+                metrics={report.metrics}
+                onInspectMetric={handleInspectMetric}
+              />
 
-          {/* 3. Liquidity */}
-          <MetricCategorySection
-            category="LIQUIDITY"
-            title="Short-Term Liquidity & Capital Coverage"
-            description="Classified working capital buffers, current ratios, and immediate cash availability metrics."
-            metricDefs={LIQUIDITY_METRICS}
-            periods={report.periods}
-            metrics={report.metrics}
-            onInspectMetric={handleInspectMetric}
-          />
+              {/* 5. Efficiency */}
+              <MetricCategorySection
+                category="EFFICIENCY"
+                title="Operating Efficiency & Working Capital Velocity"
+                description="Exact period-day turnover rates, cash conversion cycles (CCC), and inventory/receivable cycles."
+                metricDefs={EFFICIENCY_METRICS}
+                periods={report.periods}
+                metrics={report.metrics}
+                onInspectMetric={handleInspectMetric}
+              />
 
-          {/* 4. Solvency */}
-          <MetricCategorySection
-            category="SOLVENCY"
-            title="Long-Term Capital Structure & Solvency"
-            description="Funded debt resolution, debt burdens, interest servicing coverage, and leverage capacity."
-            metricDefs={SOLVENCY_METRICS}
-            periods={report.periods}
-            metrics={report.metrics}
-            onInspectMetric={handleInspectMetric}
-          />
+              {/* 6. Cash Flow */}
+              <MetricCategorySection
+                category="CASH_FLOW"
+                title="Cash Flow Generation & Earnings Quality"
+                description="Operating cash generation, capital reinvestment intensity, free cash flow (FCF), and CFO-to-net income conversion."
+                metricDefs={CASH_FLOW_METRICS}
+                periods={report.periods}
+                metrics={report.metrics}
+                onInspectMetric={handleInspectMetric}
+              />
+            </div>
+          )}
 
-          {/* 5. Efficiency */}
-          <MetricCategorySection
-            category="EFFICIENCY"
-            title="Operating Efficiency & Working Capital Velocity"
-            description="Exact period-day turnover rates, cash conversion cycles (CCC), and inventory/receivable cycles."
-            metricDefs={EFFICIENCY_METRICS}
-            periods={report.periods}
-            metrics={report.metrics}
-            onInspectMetric={handleInspectMetric}
-          />
-
-          {/* 6. Cash Flow */}
-          <MetricCategorySection
-            category="CASH_FLOW"
-            title="Cash Flow Generation & Earnings Quality"
-            description="Operating cash generation, capital reinvestment intensity, free cash flow (FCF), and CFO-to-net income conversion."
-            metricDefs={CASH_FLOW_METRICS}
-            periods={report.periods}
-            metrics={report.metrics}
-            onInspectMetric={handleInspectMetric}
-          />
-        </div>
-      )}
-
-      {/* Auditable Provenance Inspector Modal */}
-      {selectedMetric && (
-        <ProvenanceModal
-          metric={selectedMetric.metric}
-          metricLabel={selectedMetric.label}
-          onClose={() => setSelectedMetric(null)}
-        />
+          {/* Auditable Provenance Inspector Modal */}
+          {selectedMetric && (
+            <ProvenanceModal
+              metric={selectedMetric.metric}
+              metricLabel={selectedMetric.label}
+              onClose={() => setSelectedMetric(null)}
+            />
+          )}
+        </>
       )}
     </div>
   );

@@ -1,19 +1,49 @@
 import React from 'react';
-import type { MetricResultSchema } from '../../types/fundamental';
+import type {
+  MetricDiagnosticSchema,
+  MetricProvenanceSchema,
+  ProvenanceAuditTarget,
+} from '../../types/advancedFundamentals';
+import type { MetricResultSchema, MetricStatus } from '../../types/fundamental';
 import { MetricStatusBadge } from './MetricStatusBadge';
 
 interface Props {
-  metric: MetricResultSchema;
-  metricLabel: string;
+  metric?: MetricResultSchema | null;
+  metricLabel?: string;
+  auditTarget?: ProvenanceAuditTarget | null;
   onClose: () => void;
 }
 
 export const ProvenanceModal: React.FC<Props> = ({
   metric,
   metricLabel,
+  auditTarget,
   onClose,
 }) => {
-  const { provenance, diagnostics } = metric;
+  // Normalize between M7A MetricResultSchema and M7B.2 ProvenanceAuditTarget
+  const targetName: string =
+    auditTarget?.metricName || metricLabel || metric?.metric_id || 'Financial Metric';
+  const category: string =
+    auditTarget?.category || metric?.category || 'ANALYTICS';
+  const periodLabel: string =
+    auditTarget?.periodLabel || metric?.period_key || 'Period';
+  const formattedValue: string =
+    auditTarget?.formattedValue || metric?.formatted_value || '—';
+  const status: string = auditTarget?.status || metric?.status || 'VALID';
+  const isDerived: boolean =
+    auditTarget?.isDerived !== undefined ? auditTarget.isDerived : (metric?.is_derived ?? true);
+  const provenance: MetricProvenanceSchema =
+    auditTarget?.provenance || metric?.provenance || {
+      formula_id: 'UNKNOWN',
+      methodology_version: '1.0.0',
+      source_fact_ids: [],
+      source_concepts: [],
+      source_periods: [],
+      provider: 'aurelius_engine',
+    };
+  const diagnostics: MetricDiagnosticSchema[] =
+    auditTarget?.diagnostics || metric?.diagnostics || [];
+  const fallbackUsed: boolean = auditTarget?.allowFallbackUsed ?? false;
 
   return (
     <div className="provenance-modal-overlay" onClick={onClose}>
@@ -24,9 +54,9 @@ export const ProvenanceModal: React.FC<Props> = ({
         <div className="provenance-modal-header">
           <div>
             <span className="provenance-modal-category">
-              {metric.category} • {metric.period_key}
+              {category} • {periodLabel}
             </span>
-            <h2 className="provenance-modal-title">{metricLabel}</h2>
+            <h2 className="provenance-modal-title">{targetName}</h2>
           </div>
           <button
             type="button"
@@ -39,21 +69,26 @@ export const ProvenanceModal: React.FC<Props> = ({
 
         <div className="provenance-modal-body">
           <div className="provenance-stat-card">
-            <div className="stat-label">CALCULATED VALUE</div>
+            <div className="stat-label">CALCULATED / DERIVED VALUE</div>
             <div className="stat-value-row">
-              <span className="stat-value">{metric.formatted_value}</span>
+              <span className="stat-value">{formattedValue}</span>
               <MetricStatusBadge
-                status={metric.status}
+                status={status as MetricStatus}
                 diagnosticCount={diagnostics.length}
               />
               <span className="badge-derived">
-                {metric.is_derived ? 'DERIVED' : 'REPORTED'}
+                {isDerived ? 'DERIVED' : 'REPORTED'}
               </span>
+              {fallbackUsed && (
+                <span className="badge-fallback-active" title="Point-in-time ending denominator fallback was applied">
+                  PIT FALLBACK ACTIVE
+                </span>
+              )}
             </div>
           </div>
 
           <div className="provenance-section">
-            <h3 className="section-title">AUDITABLE METHODOLOGY & FORMULA</h3>
+            <h3 className="section-title">AUDITABLE METHODOLOGY &amp; FORMULA</h3>
             <div className="provenance-field">
               <span className="field-name">Formula ID:</span>
               <code className="field-code">{provenance.formula_id}</code>
@@ -74,33 +109,41 @@ export const ProvenanceModal: React.FC<Props> = ({
           </div>
 
           <div className="provenance-section">
-            <h3 className="section-title">IMMUTABLE SOURCE FACTS & CONCEPTS</h3>
+            <h3 className="section-title">IMMUTABLE SOURCE FACTS &amp; CONCEPTS</h3>
             <div className="provenance-field">
               <span className="field-name">Source Concepts:</span>
               <div className="tag-list">
-                {provenance.source_concepts.map((concept) => (
-                  <span key={concept} className="concept-tag">
-                    {concept}
-                  </span>
-                ))}
+                {provenance.source_concepts && provenance.source_concepts.length > 0 ? (
+                  provenance.source_concepts.map((concept, idx) => (
+                    <span key={`${concept}-${idx}`} className="concept-tag">
+                      {concept}
+                    </span>
+                  ))
+                ) : (
+                  <span className="field-val-muted">None (direct calculation)</span>
+                )}
               </div>
             </div>
             <div className="provenance-field">
               <span className="field-name">Source Periods:</span>
               <div className="tag-list">
-                {provenance.source_periods.map((p) => (
-                  <span key={p} className="period-tag">
-                    {p}
-                  </span>
-                ))}
+                {provenance.source_periods && provenance.source_periods.length > 0 ? (
+                  provenance.source_periods.map((p, idx) => (
+                    <span key={`${p}-${idx}`} className="period-tag">
+                      {p}
+                    </span>
+                  ))
+                ) : (
+                  <span className="field-val-muted">None specified</span>
+                )}
               </div>
             </div>
             <div className="provenance-field">
               <span className="field-name">Source Fact IDs:</span>
               <div className="fact-id-list">
-                {provenance.source_fact_ids.length > 0 ? (
-                  provenance.source_fact_ids.map((id) => (
-                    <code key={id} className="fact-id-item">
+                {provenance.source_fact_ids && provenance.source_fact_ids.length > 0 ? (
+                  provenance.source_fact_ids.map((id, idx) => (
+                    <code key={`${id}-${idx}`} className="fact-id-item">
                       {id}
                     </code>
                   ))
@@ -113,7 +156,7 @@ export const ProvenanceModal: React.FC<Props> = ({
 
           {diagnostics.length > 0 && (
             <div className="provenance-section diagnostics-section">
-              <h3 className="section-title">AUDIT DIAGNOSTICS & WARNINGS</h3>
+              <h3 className="section-title">AUDIT DIAGNOSTICS &amp; WARNINGS</h3>
               {diagnostics.map((diag, idx) => (
                 <div key={idx} className="diagnostic-item">
                   <div className="diagnostic-code-badge">{diag.code}</div>
