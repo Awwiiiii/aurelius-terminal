@@ -33,6 +33,7 @@ from decimal import Decimal
 
 from aurelius.domain.entities.financials import (
     CanonicalConcept,
+    FinancialFact,
     FinancialPeriod,
     StatementType,
     Unit,
@@ -52,6 +53,7 @@ from aurelius.domain.fundamental.models import (
 from aurelius.domain.fundamental.period_matching import (
     MultiPeriodFactStore,
 )
+from aurelius.domain.fundamental.ttm import TTMEngine, TTMWindow
 
 
 class ROICEngine:
@@ -461,13 +463,24 @@ class ROICEngine:
                 ),
             )
 
+        equity_fact = fact_store.get_canonical_fact(
+            StatementType.BALANCE_SHEET,
+            CanonicalConcept.STOCKHOLDERS_EQUITY,
+            period.period_key,
+        )
+        resolved_curr = (
+            equity_fact.currency
+            if equity_fact and equity_fact.currency
+            else getattr(fact_store, "reporting_currency", None)
+        )
+
         return MetricResult(
             metric_id=FundamentalMetricId.INVESTED_CAPITAL,
             category=MetricCategory.SOLVENCY,
             status=MetricStatus.VALID,
             value=ic_val,
             unit=Unit.CURRENCY,
-            currency=fact_store.reporting_currency,
+            currency=resolved_curr,
             period=period,
             diagnostics=diagnostics,
             provenance=MetricProvenance(
@@ -729,5 +742,375 @@ class ROICEngine:
                 source_concepts=all_concepts,
                 source_periods=all_periods,
                 methodology_notes=notes,
+            ),
+        )
+
+    @classmethod
+    def calculate_ttm_effective_tax_rate(
+        cls,
+        window: TTMWindow,
+        fact_store: MultiPeriodFactStore,
+    ) -> MetricResult:
+        """
+        Calculate Effective Tax Rate across a 4-quarter TTM window:
+          ETR = TTM Income Tax Expense / TTM Pretax Income.
+        """
+        tax_facts: list[FinancialFact] = []
+        ebt_facts: list[FinancialFact] = []
+        missing_tax_quarters: list[str] = []
+        missing_ebt_quarters: list[str] = []
+
+        for q in window.quarters:
+            tf = fact_store.get_canonical_fact(
+                StatementType.INCOME_STATEMENT,
+                CanonicalConcept.INCOME_TAX_EXPENSE,
+                q.period_key,
+            )
+            if tf is not None:
+                tax_facts.append(tf)
+            else:
+                missing_tax_quarters.append(q.period_key)
+
+            ef = fact_store.get_canonical_fact(
+                StatementType.INCOME_STATEMENT,
+                CanonicalConcept.PRETAX_INCOME,
+                q.period_key,
+            )
+            if ef is not None:
+                ebt_facts.append(ef)
+            else:
+                missing_ebt_quarters.append(q.period_key)
+
+        all_fact_ids = [f.fact_id for f in tax_facts + ebt_facts]
+        all_concepts = ["INCOME_TAX_EXPENSE", "PRETAX_INCOME"]
+        all_periods = [q.period_key for q in window.quarters]
+
+        if missing_tax_quarters or missing_ebt_quarters:
+            return MetricResult(
+                metric_id=FundamentalMetricId.EFFECTIVE_TAX_RATE,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.UNAVAILABLE_EFFECTIVE_TAX_RATE,
+                        message=(
+                            "TTM Effective Tax Rate unavailable due to missing quarterly facts: "
+                            f"tax={missing_tax_quarters}, pretax_income={missing_ebt_quarters}."
+                        ),
+                        details={
+                            "missing_tax": ", ".join(missing_tax_quarters),
+                            "missing_ebt": ", ".join(missing_ebt_quarters),
+                        },
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ETR_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_fact_ids,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                    methodology_notes="TTM ETR requires 4 complete quarters of tax and pretax income.",
+                ),
+            )
+
+        ttm_tax = sum((f.value for f in tax_facts), start=Decimal("0"))
+        ttm_ebt = sum((f.value for f in ebt_facts), start=Decimal("0"))
+
+        if ttm_ebt <= Decimal("0"):
+            return MetricResult(
+                metric_id=FundamentalMetricId.EFFECTIVE_TAX_RATE,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.UNAVAILABLE_EFFECTIVE_TAX_RATE,
+                        message="TTM Pretax Income (EBT) is zero or negative; ETR is economically uncomputable.",
+                        details={"ttm_ebt": str(ttm_ebt)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ETR_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_fact_ids,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                ),
+            )
+
+        if ttm_tax <= Decimal("0"):
+            return MetricResult(
+                metric_id=FundamentalMetricId.EFFECTIVE_TAX_RATE,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.UNAVAILABLE_EFFECTIVE_TAX_RATE,
+                        message="TTM Income Tax Expense is zero or negative with positive EBT; ETR is uncomputable.",
+                        details={"ttm_tax": str(ttm_tax), "ttm_ebt": str(ttm_ebt)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ETR_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_fact_ids,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                ),
+            )
+
+        etr_val = ttm_tax / ttm_ebt
+        if etr_val >= Decimal("1.0"):
+            return MetricResult(
+                metric_id=FundamentalMetricId.EFFECTIVE_TAX_RATE,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.UNAVAILABLE_EFFECTIVE_TAX_RATE,
+                        message="TTM Effective Tax Rate >= 100%; economically non-standard and rejected.",
+                        details={"ttm_etr": str(etr_val)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ETR_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_fact_ids,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                ),
+            )
+
+        return MetricResult(
+            metric_id=FundamentalMetricId.EFFECTIVE_TAX_RATE,
+            category=MetricCategory.PROFITABILITY,
+            status=MetricStatus.VALID,
+            value=etr_val,
+            unit=Unit.PERCENT,
+            currency=None,
+            period=window.ttm_period,
+            diagnostics=[],
+            provenance=MetricProvenance(
+                formula_id="FORMULA_ETR_TTM",
+                methodology_version=cls.METHODOLOGY_VERSION,
+                source_fact_ids=all_fact_ids,
+                source_concepts=all_concepts,
+                source_periods=all_periods,
+                methodology_notes=f"TTM ETR = TTM Tax ({ttm_tax}) / TTM EBT ({ttm_ebt}).",
+            ),
+        )
+
+    @classmethod
+    def calculate_ttm_nopat(
+        cls,
+        window: TTMWindow,
+        fact_store: MultiPeriodFactStore,
+    ) -> MetricResult:
+        """
+        Calculate TTM NOPAT: TTM Operating Income (EBIT) * (1 - TTM ETR).
+        """
+        ebit_res = TTMEngine.calculate_ttm_operating_income(window, fact_store)
+        etr_res = cls.calculate_ttm_effective_tax_rate(window, fact_store)
+
+        all_facts = list(
+            dict.fromkeys(
+                [
+                    *ebit_res.provenance.source_fact_ids,
+                    *etr_res.provenance.source_fact_ids,
+                ]
+            )
+        )
+        all_concepts = list(
+            dict.fromkeys(
+                [
+                    *ebit_res.provenance.source_concepts,
+                    *etr_res.provenance.source_concepts,
+                ]
+            )
+        )
+        all_periods = list(
+            dict.fromkeys(
+                [
+                    *ebit_res.provenance.source_periods,
+                    *etr_res.provenance.source_periods,
+                ]
+            )
+        )
+        all_diags = list(ebit_res.diagnostics) + list(etr_res.diagnostics)
+
+        if (
+            ebit_res.status != MetricStatus.VALID
+            or ebit_res.value is None
+            or etr_res.status != MetricStatus.VALID
+            or etr_res.value is None
+        ):
+            return MetricResult(
+                metric_id=FundamentalMetricId.NOPAT,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.CURRENCY,
+                currency=ebit_res.currency,
+                period=window.ttm_period,
+                diagnostics=all_diags,
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_NOPAT_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_facts,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                    methodology_notes="TTM NOPAT requires valid TTM EBIT and valid TTM ETR.",
+                ),
+            )
+
+        diags = list(all_diags)
+        if ebit_res.value < Decimal("0"):
+            diags.append(
+                MetricDiagnostic(
+                    code=DiagnosticCode.NEGATIVE_OPERATING_PROFIT,
+                    message="TTM Operating Income is negative; NOPAT reflects after-tax operating loss.",
+                    details={"ttm_ebit": str(ebit_res.value)},
+                )
+            )
+
+        nopat_val = ebit_res.value * (Decimal("1") - etr_res.value)
+        return MetricResult(
+            metric_id=FundamentalMetricId.NOPAT,
+            category=MetricCategory.PROFITABILITY,
+            status=MetricStatus.VALID,
+            value=nopat_val,
+            unit=Unit.CURRENCY,
+            currency=ebit_res.currency,
+            period=window.ttm_period,
+            diagnostics=diags,
+            provenance=MetricProvenance(
+                formula_id="FORMULA_NOPAT_TTM",
+                methodology_version=cls.METHODOLOGY_VERSION,
+                source_fact_ids=all_facts,
+                source_concepts=all_concepts,
+                source_periods=all_periods,
+                methodology_notes=f"TTM NOPAT = TTM EBIT ({ebit_res.value}) * (1 - TTM ETR ({etr_res.value})).",
+            ),
+        )
+
+    @classmethod
+    def calculate_ttm_roic(
+        cls,
+        window: TTMWindow,
+        prior_anchor: FinancialPeriod | None,
+        fact_store: MultiPeriodFactStore,
+        allow_point_in_time_fallback: bool = False,
+    ) -> MetricResult:
+        """
+        Calculate TTM ROIC: TTM NOPAT / Average Invested Capital (Q(t-4) to Q(t)).
+        """
+        nopat_res = cls.calculate_ttm_nopat(window, fact_store)
+        avg_ic, ic_facts, ic_concepts, ic_periods, ic_diags, used_fb, ic_notes = (
+            cls.calculate_average_invested_capital(
+                current_period=window.anchor_quarter,
+                prior_period=prior_anchor,
+                fact_store=fact_store,
+                allow_point_in_time_fallback=allow_point_in_time_fallback,
+            )
+        )
+
+        all_facts = list(
+            dict.fromkeys([*nopat_res.provenance.source_fact_ids, *ic_facts])
+        )
+        all_concepts = list(
+            dict.fromkeys([*nopat_res.provenance.source_concepts, *ic_concepts])
+        )
+        all_periods = list(
+            dict.fromkeys([*nopat_res.provenance.source_periods, *ic_periods])
+        )
+        all_diags = list(nopat_res.diagnostics) + list(ic_diags)
+
+        if (
+            nopat_res.status != MetricStatus.VALID
+            or nopat_res.value is None
+            or avg_ic is None
+        ):
+            return MetricResult(
+                metric_id=FundamentalMetricId.ROIC,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=all_diags,
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ROIC_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_facts,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                    methodology_notes="TTM ROIC unavailable: "
+                    + (ic_notes if avg_ic is None else "NOPAT unavailable."),
+                ),
+            )
+
+        if avg_ic <= Decimal("0"):
+            return MetricResult(
+                metric_id=FundamentalMetricId.ROIC,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.NON_POSITIVE_INVESTED_CAPITAL,
+                        message="Average Invested Capital is zero or negative; TTM ROIC is unavailable.",
+                        details={"average_invested_capital": str(avg_ic)},
+                    ),
+                    *all_diags,
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ROIC_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_facts,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                    methodology_notes="Average Invested Capital is <= 0.",
+                ),
+            )
+
+        roic_val = nopat_res.value / avg_ic
+        formula_id = (
+            "FORMULA_ROIC_TTM_POINT_IN_TIME" if used_fb else "FORMULA_ROIC_TTM_2PT_AVG"
+        )
+        return MetricResult(
+            metric_id=FundamentalMetricId.ROIC,
+            category=MetricCategory.PROFITABILITY,
+            status=MetricStatus.VALID,
+            value=roic_val,
+            unit=Unit.PERCENT,
+            currency=None,
+            period=window.ttm_period,
+            diagnostics=all_diags,
+            provenance=MetricProvenance(
+                formula_id=formula_id,
+                methodology_version=cls.METHODOLOGY_VERSION,
+                source_fact_ids=all_facts,
+                source_concepts=all_concepts,
+                source_periods=all_periods,
+                methodology_notes=f"TTM ROIC = TTM NOPAT ({nopat_res.value}) / Average Invested Capital ({avg_ic}). {ic_notes}",
             ),
         )

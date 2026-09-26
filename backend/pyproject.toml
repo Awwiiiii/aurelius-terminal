@@ -108,6 +108,11 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["aurelius"]
 
+[tool.ruff.lint.per-file-ignores]
+# B008: FastAPI Depends() in default args is intentional DI — not an accidental function call.
+"aurelius/services/fundamental_service.py" = ["B008"]
+"aurelius/services/fundamental_trend_service.py" = ["B008"]
+
 [tool.mypy]
 python_version = "3.12"
 # Strict checking on domain layer where correctness is most critical.

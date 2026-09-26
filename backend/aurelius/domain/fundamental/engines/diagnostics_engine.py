@@ -46,6 +46,7 @@ from decimal import Decimal
 
 from aurelius.domain.entities.financials import (
     CanonicalConcept,
+    FinancialFact,
     FinancialPeriod,
     FiscalPeriodType,
     StatementType,
@@ -67,6 +68,7 @@ from aurelius.domain.fundamental.period_matching import (
     calculate_two_point_average,
     get_prior_period,
 )
+from aurelius.domain.fundamental.ttm import TTMWindow
 
 
 class DiagnosticsEngine:
@@ -620,3 +622,311 @@ class DiagnosticsEngine:
                 diagnostics=[info_diag],
                 provenance=curr_res.provenance,
             )
+
+    @classmethod
+    def calculate_sloan_accruals_ttm(
+        cls,
+        window: TTMWindow,
+        prior_anchor: FinancialPeriod | None,
+        fact_store: MultiPeriodFactStore,
+        allow_point_in_time_fallback: bool = False,
+    ) -> MetricResult:
+        """
+        Calculate Sloan Balance-Sheet Accruals for a 4-quarter TTM window:
+          [(ΔCA - ΔCash) - (ΔCL - ΔSTD) - Depreciation] / Average Total Assets
+        Where:
+          - Δ values compare Q(t) (window.anchor_quarter) vs Q(t-4) (prior_anchor)
+          - Depreciation is aggregated across all 4 quarters of the TTM window
+          - Average Total Assets is the two-point average of Q(t-4) and Q(t)
+        """
+        current_period = window.anchor_quarter
+        all_diags: list[MetricDiagnostic] = []
+
+        if prior_anchor is None and not allow_point_in_time_fallback:
+            return MetricResult(
+                metric_id=FundamentalMetricId.SLOAN_ACCRUALS,
+                category=MetricCategory.EFFICIENCY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.INSUFFICIENT_PERIODS_FOR_AVERAGE,
+                        message="Beginning anchor quarter Q(t-4) is missing; Sloan accruals is unavailable.",
+                        details={"period": current_period.period_key},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_SLOAN_ACCRUALS_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_concepts=[
+                        "CURRENT_ASSETS",
+                        "CASH_AND_EQUIVALENTS",
+                        "CURRENT_LIABILITIES",
+                        "TOTAL_ASSETS",
+                    ],
+                    source_periods=[current_period.period_key],
+                ),
+            )
+
+        avg_assets, a_diag, a_used_fb, asset_facts = calculate_two_point_average(
+            CanonicalConcept.TOTAL_ASSETS,
+            current_period,
+            prior_anchor,
+            fact_store,
+            allow_point_in_time_fallback,
+        )
+
+        all_fact_ids = [f.fact_id for f in asset_facts]
+        all_concepts = ["TOTAL_ASSETS"]
+        all_periods = list(
+            dict.fromkeys(
+                [current_period.period_key, *(f.period.period_key for f in asset_facts)]
+            )
+        )
+
+        if a_diag is not None:
+            all_diags.append(a_diag)
+
+        if avg_assets is None or (a_diag is not None and not a_used_fb):
+            return MetricResult(
+                metric_id=FundamentalMetricId.SLOAN_ACCRUALS,
+                category=MetricCategory.EFFICIENCY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=all_diags,
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_SLOAN_ACCRUALS_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_fact_ids,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                ),
+            )
+
+        if avg_assets <= Decimal("0"):
+            return MetricResult(
+                metric_id=FundamentalMetricId.SLOAN_ACCRUALS,
+                category=MetricCategory.EFFICIENCY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.NON_POSITIVE_AVERAGE_ASSETS,
+                        message="Average Total Assets is zero or negative; Sloan accruals is unavailable.",
+                        details={"average_assets": str(avg_assets)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_SLOAN_ACCRUALS_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_fact_ids,
+                    source_concepts=all_concepts,
+                    source_periods=all_periods,
+                ),
+            )
+
+        ca_curr = fact_store.get_canonical_fact(
+            StatementType.BALANCE_SHEET,
+            CanonicalConcept.CURRENT_ASSETS,
+            current_period.period_key,
+        )
+        ca_prior = (
+            fact_store.get_canonical_fact(
+                StatementType.BALANCE_SHEET,
+                CanonicalConcept.CURRENT_ASSETS,
+                prior_anchor.period_key,
+            )
+            if prior_anchor
+            else (ca_curr if a_used_fb else None)
+        )
+
+        cash_curr = fact_store.get_canonical_fact(
+            StatementType.BALANCE_SHEET,
+            CanonicalConcept.CASH_AND_EQUIVALENTS,
+            current_period.period_key,
+        )
+        cash_prior = (
+            fact_store.get_canonical_fact(
+                StatementType.BALANCE_SHEET,
+                CanonicalConcept.CASH_AND_EQUIVALENTS,
+                prior_anchor.period_key,
+            )
+            if prior_anchor
+            else (cash_curr if a_used_fb else None)
+        )
+
+        cl_curr = fact_store.get_canonical_fact(
+            StatementType.BALANCE_SHEET,
+            CanonicalConcept.CURRENT_LIABILITIES,
+            current_period.period_key,
+        )
+        cl_prior = (
+            fact_store.get_canonical_fact(
+                StatementType.BALANCE_SHEET,
+                CanonicalConcept.CURRENT_LIABILITIES,
+                prior_anchor.period_key,
+            )
+            if prior_anchor
+            else (cl_curr if a_used_fb else None)
+        )
+
+        std_curr = fact_store.get_source_fact(
+            StatementType.BALANCE_SHEET,
+            [
+                "Short Term Debt",
+                "Current Portion Of Long Term Debt",
+                "Short Term Borrowings",
+            ],
+            current_period.period_key,
+        )
+        std_prior = (
+            fact_store.get_source_fact(
+                StatementType.BALANCE_SHEET,
+                [
+                    "Short Term Debt",
+                    "Current Portion Of Long Term Debt",
+                    "Short Term Borrowings",
+                ],
+                prior_anchor.period_key,
+            )
+            if prior_anchor
+            else (std_curr if a_used_fb else None)
+        )
+
+        # TTM Depreciation across the 4 quarters of window
+        dep_facts: list[FinancialFact] = []
+        for q in window.quarters:
+            df = fact_store.get_source_fact(
+                StatementType.CASH_FLOW,
+                [
+                    "Depreciation And Amortization",
+                    "Depreciation Amortization Depletion",
+                    "Depreciation & Amortization",
+                ],
+                q.period_key,
+            )
+            if df is None:
+                df = fact_store.get_source_fact(
+                    StatementType.INCOME_STATEMENT,
+                    [
+                        "Depreciation And Amortization",
+                        "Depreciation Amortization Depletion",
+                        "Depreciation & Amortization",
+                    ],
+                    q.period_key,
+                )
+            if df is not None:
+                dep_facts.append(df)
+
+        missing_facts = []
+        if ca_curr is None or ca_prior is None:
+            missing_facts.append("CURRENT_ASSETS")
+        if cash_curr is None or cash_prior is None:
+            missing_facts.append("CASH_AND_EQUIVALENTS")
+        if cl_curr is None or cl_prior is None:
+            missing_facts.append("CURRENT_LIABILITIES")
+
+        if missing_facts:
+            return MetricResult(
+                metric_id=FundamentalMetricId.SLOAN_ACCRUALS,
+                category=MetricCategory.EFFICIENCY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.MISSING_REQUIRED_FACT,
+                        message=f"Missing line item(s) across periods for TTM Sloan accruals: {', '.join(missing_facts)}.",
+                        details={"missing_concepts": ", ".join(missing_facts)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_SLOAN_ACCRUALS_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_fact_ids,
+                    source_concepts=list(
+                        dict.fromkeys([*all_concepts, *missing_facts])
+                    ),
+                    source_periods=all_periods,
+                ),
+            )
+
+        delta_ca = ca_curr.value - ca_prior.value
+        delta_cash = cash_curr.value - cash_prior.value
+        delta_cl = cl_curr.value - cl_prior.value
+        std_c_val = std_curr.value if std_curr is not None else Decimal("0")
+        std_p_val = std_prior.value if std_prior is not None else Decimal("0")
+        delta_std = std_c_val - std_p_val
+
+        dep_val = (
+            sum((f.value for f in dep_facts), start=Decimal("0"))
+            if len(dep_facts) == 4
+            else Decimal("0")
+        )
+
+        accruals_numerator = (delta_ca - delta_cash) - (delta_cl - delta_std) - dep_val
+        sloan_ratio = accruals_numerator / avg_assets
+
+        for f in (
+            ca_curr,
+            ca_prior,
+            cash_curr,
+            cash_prior,
+            cl_curr,
+            cl_prior,
+            std_curr,
+            std_prior,
+            *dep_facts,
+        ):
+            if f is not None:
+                all_fact_ids.append(f.fact_id)
+                all_periods.append(f.period.period_key)
+
+        res_diags = list(all_diags)
+        if sloan_ratio > cls.SLOAN_ACCRUALS_THRESHOLD:
+            res_diags.append(
+                MetricDiagnostic(
+                    code=DiagnosticCode.SLOAN_ACCRUALS_WARNING,
+                    message="Requires further investigation: High accruals relative to total assets.",
+                    details={
+                        "sloan_ratio": str(sloan_ratio),
+                        "threshold": str(cls.SLOAN_ACCRUALS_THRESHOLD),
+                    },
+                )
+            )
+
+        return MetricResult(
+            metric_id=FundamentalMetricId.SLOAN_ACCRUALS,
+            category=MetricCategory.EFFICIENCY,
+            status=MetricStatus.VALID,
+            value=sloan_ratio,
+            unit=Unit.RATIO,
+            currency=None,
+            period=window.ttm_period,
+            diagnostics=res_diags,
+            provenance=MetricProvenance(
+                formula_id="FORMULA_SLOAN_ACCRUALS_TTM",
+                methodology_version=cls.METHODOLOGY_VERSION,
+                source_fact_ids=list(dict.fromkeys(all_fact_ids)),
+                source_concepts=[
+                    "CURRENT_ASSETS",
+                    "CASH_AND_EQUIVALENTS",
+                    "CURRENT_LIABILITIES",
+                    "TOTAL_ASSETS",
+                    "DEPRECIATION_AND_AMORTIZATION",
+                ],
+                source_periods=list(dict.fromkeys(all_periods)),
+                methodology_notes="Measures the magnitude of balance-sheet accruals relative to average total assets and can be used as a screening diagnostic for divergence between accounting accruals and cash-based activity.",
+            ),
+        )

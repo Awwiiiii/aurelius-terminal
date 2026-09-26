@@ -42,6 +42,7 @@ from pydantic import BaseModel, ConfigDict
 
 from aurelius.domain.entities.financials import (
     CanonicalConcept,
+    FinancialFact,
     FinancialPeriod,
     StatementType,
     Unit,
@@ -62,6 +63,7 @@ from aurelius.domain.fundamental.period_matching import (
     MultiPeriodFactStore,
     calculate_two_point_average,
 )
+from aurelius.domain.fundamental.ttm import TTMEngine, TTMWindow
 
 
 class DuPont3StepDecomposition(BaseModel):
@@ -1028,6 +1030,764 @@ class DuPontEngine:
                 source_concepts=all_provenance_concepts,
                 source_periods=all_provenance_periods,
                 methodology_notes="ROE = Tax Burden * Interest Burden * EBIT Margin * Asset Turnover * Equity Multiplier.",
+            ),
+        )
+
+        is_reconciled = False
+        discrepancy = None
+        if direct_roe.status == MetricStatus.VALID and direct_roe.value is not None:
+            discrepancy = abs(direct_roe.value - recon_val)
+            is_reconciled = discrepancy <= cls.RECONCILIATION_TOLERANCE
+
+        return DuPont5StepDecomposition(
+            tax_burden=tax_burden,
+            interest_burden=interest_burden,
+            ebit_margin=ebit_margin,
+            asset_turnover=asset_turnover,
+            equity_multiplier=equity_multiplier,
+            reconstructed_roe=recon_roe,
+            direct_roe=direct_roe,
+            is_reconciled=is_reconciled,
+            reconciliation_discrepancy=discrepancy,
+        )
+
+    @classmethod
+    def calculate_3step_dupont_ttm(
+        cls,
+        window: TTMWindow,
+        prior_anchor: FinancialPeriod | None,
+        fact_store: MultiPeriodFactStore,
+        allow_point_in_time_fallback: bool = False,
+    ) -> DuPont3StepDecomposition:
+        """
+        Calculate 3-Step DuPont decomposition for a 4-quarter TTM window.
+        Uses 4-quarter duration flows and 2-point balance sheet averages (Q(t-4) to Q(t)).
+        """
+        npm = TTMEngine.calculate_ttm_net_profit_margin(window, fact_store)
+        ttm_rev = TTMEngine.calculate_ttm_revenue(window, fact_store)
+        avg_assets, a_diag, a_used_fb, asset_facts = calculate_two_point_average(
+            CanonicalConcept.TOTAL_ASSETS,
+            window.anchor_quarter,
+            prior_anchor,
+            fact_store,
+            allow_point_in_time_fallback,
+        )
+
+        all_at_facts = [
+            *ttm_rev.provenance.source_fact_ids,
+            *(f.fact_id for f in asset_facts),
+        ]
+        all_at_periods = list(
+            dict.fromkeys(
+                [
+                    *ttm_rev.provenance.source_periods,
+                    *(f.period.period_key for f in asset_facts),
+                ]
+            )
+        )
+
+        if (
+            ttm_rev.status != MetricStatus.VALID
+            or ttm_rev.value is None
+            or avg_assets is None
+            or (a_diag is not None and not a_used_fb)
+        ):
+            at_result = MetricResult(
+                metric_id=FundamentalMetricId.ASSET_TURNOVER,
+                category=MetricCategory.EFFICIENCY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[a_diag] if a_diag else list(ttm_rev.diagnostics),
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ASSET_TURNOVER_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_at_facts,
+                    source_concepts=["REVENUE", "TOTAL_ASSETS"],
+                    source_periods=all_at_periods,
+                ),
+            )
+        elif ttm_rev.value <= Decimal("0"):
+            at_result = MetricResult(
+                metric_id=FundamentalMetricId.ASSET_TURNOVER,
+                category=MetricCategory.EFFICIENCY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.NON_POSITIVE_REVENUE,
+                        message="TTM Revenue is zero or negative; Asset Turnover is unavailable.",
+                        details={"ttm_revenue": str(ttm_rev.value)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ASSET_TURNOVER_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_at_facts,
+                    source_concepts=["REVENUE", "TOTAL_ASSETS"],
+                    source_periods=all_at_periods,
+                ),
+            )
+        elif avg_assets <= Decimal("0"):
+            at_result = MetricResult(
+                metric_id=FundamentalMetricId.ASSET_TURNOVER,
+                category=MetricCategory.EFFICIENCY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.NON_POSITIVE_AVERAGE_ASSETS,
+                        message="Average Total Assets is zero or negative; Asset Turnover is unavailable.",
+                        details={"average_assets": str(avg_assets)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ASSET_TURNOVER_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_at_facts,
+                    source_concepts=["REVENUE", "TOTAL_ASSETS"],
+                    source_periods=all_at_periods,
+                ),
+            )
+        else:
+            at_val = ttm_rev.value / avg_assets
+            at_result = MetricResult(
+                metric_id=FundamentalMetricId.ASSET_TURNOVER,
+                category=MetricCategory.EFFICIENCY,
+                status=MetricStatus.VALID,
+                value=at_val,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[a_diag] if a_diag and a_used_fb else [],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ASSET_TURNOVER_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_at_facts,
+                    source_concepts=["REVENUE", "TOTAL_ASSETS"],
+                    source_periods=all_at_periods,
+                ),
+            )
+
+        em = cls.calculate_equity_multiplier(
+            window.anchor_quarter,
+            prior_anchor,
+            fact_store,
+            allow_point_in_time_fallback,
+        )
+
+        # Direct ROE
+        ttm_ni = TTMEngine.calculate_ttm_net_income(window, fact_store)
+        avg_equity, e_diag, e_used_fb, equity_facts = calculate_two_point_average(
+            CanonicalConcept.STOCKHOLDERS_EQUITY,
+            window.anchor_quarter,
+            prior_anchor,
+            fact_store,
+            allow_point_in_time_fallback,
+        )
+
+        all_roe_facts = list(
+            dict.fromkeys(
+                [*ttm_ni.provenance.source_fact_ids, *(f.fact_id for f in equity_facts)]
+            )
+        )
+        all_roe_periods = list(
+            dict.fromkeys(
+                [
+                    *ttm_ni.provenance.source_periods,
+                    *(f.period.period_key for f in equity_facts),
+                ]
+            )
+        )
+
+        if (
+            ttm_ni.status != MetricStatus.VALID
+            or ttm_ni.value is None
+            or avg_equity is None
+            or (e_diag is not None and not e_used_fb)
+        ):
+            direct_roe = MetricResult(
+                metric_id=FundamentalMetricId.RETURN_ON_EQUITY,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[e_diag] if e_diag else list(ttm_ni.diagnostics),
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ROE_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_roe_facts,
+                    source_concepts=["NET_INCOME", "STOCKHOLDERS_EQUITY"],
+                    source_periods=all_roe_periods,
+                ),
+            )
+        elif avg_equity <= Decimal("0"):
+            direct_roe = MetricResult(
+                metric_id=FundamentalMetricId.RETURN_ON_EQUITY,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.NON_POSITIVE_AVERAGE_EQUITY,
+                        message="Average Stockholders' Equity is zero or negative; direct ROE is unavailable.",
+                        details={"average_equity": str(avg_equity)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ROE_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_roe_facts,
+                    source_concepts=["NET_INCOME", "STOCKHOLDERS_EQUITY"],
+                    source_periods=all_roe_periods,
+                ),
+            )
+        else:
+            direct_roe_val = ttm_ni.value / avg_equity
+            direct_roe = MetricResult(
+                metric_id=FundamentalMetricId.RETURN_ON_EQUITY,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.VALID,
+                value=direct_roe_val,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[e_diag] if e_diag and e_used_fb else [],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_ROE_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_roe_facts,
+                    source_concepts=["NET_INCOME", "STOCKHOLDERS_EQUITY"],
+                    source_periods=all_roe_periods,
+                ),
+            )
+
+        all_provenance_facts = list(
+            dict.fromkeys(
+                [
+                    *npm.provenance.source_fact_ids,
+                    *at_result.provenance.source_fact_ids,
+                    *em.provenance.source_fact_ids,
+                ]
+            )
+        )
+        all_provenance_concepts = list(
+            dict.fromkeys(
+                [
+                    *npm.provenance.source_concepts,
+                    *at_result.provenance.source_concepts,
+                    *em.provenance.source_concepts,
+                ]
+            )
+        )
+        all_provenance_periods = list(
+            dict.fromkeys(
+                [
+                    *npm.provenance.source_periods,
+                    *at_result.provenance.source_periods,
+                    *em.provenance.source_periods,
+                ]
+            )
+        )
+
+        if (
+            npm.status != MetricStatus.VALID
+            or at_result.status != MetricStatus.VALID
+            or em.status != MetricStatus.VALID
+            or npm.value is None
+            or at_result.value is None
+            or em.value is None
+        ):
+            recon_roe = MetricResult(
+                metric_id=FundamentalMetricId.DUPONT_ROE_3STEP,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=list(npm.diagnostics)
+                + list(at_result.diagnostics)
+                + list(em.diagnostics),
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_DUPONT_ROE_3STEP_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_provenance_facts,
+                    source_concepts=all_provenance_concepts,
+                    source_periods=all_provenance_periods,
+                ),
+            )
+            return DuPont3StepDecomposition(
+                net_profit_margin=npm,
+                asset_turnover=at_result,
+                equity_multiplier=em,
+                reconstructed_roe=recon_roe,
+                direct_roe=direct_roe,
+                is_reconciled=False,
+                reconciliation_discrepancy=None,
+            )
+
+        recon_val = npm.value * at_result.value * em.value
+        recon_roe = MetricResult(
+            metric_id=FundamentalMetricId.DUPONT_ROE_3STEP,
+            category=MetricCategory.PROFITABILITY,
+            status=MetricStatus.VALID,
+            value=recon_val,
+            unit=Unit.PERCENT,
+            currency=None,
+            period=window.ttm_period,
+            diagnostics=[],
+            provenance=MetricProvenance(
+                formula_id="FORMULA_DUPONT_ROE_3STEP_TTM",
+                methodology_version=cls.METHODOLOGY_VERSION,
+                source_fact_ids=all_provenance_facts,
+                source_concepts=all_provenance_concepts,
+                source_periods=all_provenance_periods,
+                methodology_notes="TTM 3-Step DuPont = TTM Net Profit Margin * TTM Asset Turnover * Equity Multiplier.",
+            ),
+        )
+
+        is_reconciled = False
+        discrepancy = None
+        if direct_roe.status == MetricStatus.VALID and direct_roe.value is not None:
+            discrepancy = abs(direct_roe.value - recon_val)
+            is_reconciled = discrepancy <= cls.RECONCILIATION_TOLERANCE
+
+        return DuPont3StepDecomposition(
+            net_profit_margin=npm,
+            asset_turnover=at_result,
+            equity_multiplier=em,
+            reconstructed_roe=recon_roe,
+            direct_roe=direct_roe,
+            is_reconciled=is_reconciled,
+            reconciliation_discrepancy=discrepancy,
+        )
+
+    @classmethod
+    def calculate_5step_dupont_ttm(
+        cls,
+        window: TTMWindow,
+        prior_anchor: FinancialPeriod | None,
+        fact_store: MultiPeriodFactStore,
+        allow_point_in_time_fallback: bool = False,
+    ) -> DuPont5StepDecomposition:
+        """
+        Calculate 5-Step DuPont decomposition for a 4-quarter TTM window.
+        Uses 4-quarter duration flows and 2-point balance sheet averages (Q(t-4) to Q(t)).
+        """
+        ttm_ni = TTMEngine.calculate_ttm_net_income(window, fact_store)
+        ttm_ebit = TTMEngine.calculate_ttm_operating_income(window, fact_store)
+        ttm_rev = TTMEngine.calculate_ttm_revenue(window, fact_store)
+
+        ebt_facts: list[FinancialFact] = []
+        for q in window.quarters:
+            ef = fact_store.get_canonical_fact(
+                StatementType.INCOME_STATEMENT,
+                CanonicalConcept.PRETAX_INCOME,
+                q.period_key,
+            )
+            if ef is not None:
+                ebt_facts.append(ef)
+
+        ttm_ebt = (
+            sum((f.value for f in ebt_facts), start=Decimal("0"))
+            if len(ebt_facts) == 4
+            else None
+        )
+
+        # Tax Burden: TTM Net Income / TTM Pretax Income
+        all_tb_facts = [
+            *ttm_ni.provenance.source_fact_ids,
+            *(f.fact_id for f in ebt_facts),
+        ]
+        all_tb_periods = list(
+            dict.fromkeys(
+                [
+                    *ttm_ni.provenance.source_periods,
+                    *(f.period.period_key for f in ebt_facts),
+                ]
+            )
+        )
+        if (
+            ttm_ni.status != MetricStatus.VALID
+            or ttm_ni.value is None
+            or ttm_ebt is None
+        ):
+            tax_burden = MetricResult(
+                metric_id=FundamentalMetricId.TAX_BURDEN,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=list(ttm_ni.diagnostics),
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_TAX_BURDEN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_tb_facts,
+                    source_concepts=["NET_INCOME", "PRETAX_INCOME"],
+                    source_periods=all_tb_periods,
+                ),
+            )
+        elif ttm_ebt == Decimal("0"):
+            tax_burden = MetricResult(
+                metric_id=FundamentalMetricId.TAX_BURDEN,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.ZERO_PRETAX_INCOME,
+                        message="TTM Pretax Income (EBT) is zero; Tax Burden is unavailable.",
+                        details={"ttm_ebt": "0"},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_TAX_BURDEN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_tb_facts,
+                    source_concepts=["NET_INCOME", "PRETAX_INCOME"],
+                    source_periods=all_tb_periods,
+                ),
+            )
+        else:
+            tb_val = ttm_ni.value / ttm_ebt
+            tb_diags = []
+            tb_status = MetricStatus.VALID
+            if ttm_ebt < Decimal("0"):
+                tb_status = MetricStatus.DISTORTED
+                tb_diags.append(
+                    MetricDiagnostic(
+                        code=DiagnosticCode.DISTORTED_PRETAX_EARNINGS,
+                        message="TTM Pretax Income (EBT) is negative; Tax Burden ratio is economically distorted.",
+                        details={"ttm_ebt": str(ttm_ebt)},
+                    )
+                )
+            tax_burden = MetricResult(
+                metric_id=FundamentalMetricId.TAX_BURDEN,
+                category=MetricCategory.PROFITABILITY,
+                status=tb_status,
+                value=tb_val,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=tb_diags,
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_TAX_BURDEN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_tb_facts,
+                    source_concepts=["NET_INCOME", "PRETAX_INCOME"],
+                    source_periods=all_tb_periods,
+                ),
+            )
+
+        # Interest Burden: TTM Pretax Income / TTM EBIT
+        all_ib_facts = [
+            *ttm_ebit.provenance.source_fact_ids,
+            *(f.fact_id for f in ebt_facts),
+        ]
+        all_ib_periods = list(
+            dict.fromkeys(
+                [
+                    *ttm_ebit.provenance.source_periods,
+                    *(f.period.period_key for f in ebt_facts),
+                ]
+            )
+        )
+        if (
+            ttm_ebit.status != MetricStatus.VALID
+            or ttm_ebit.value is None
+            or ttm_ebt is None
+        ):
+            interest_burden = MetricResult(
+                metric_id=FundamentalMetricId.INTEREST_BURDEN,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=list(ttm_ebit.diagnostics),
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_INTEREST_BURDEN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_ib_facts,
+                    source_concepts=["PRETAX_INCOME", "OPERATING_INCOME"],
+                    source_periods=all_ib_periods,
+                ),
+            )
+        elif ttm_ebit.value == Decimal("0"):
+            interest_burden = MetricResult(
+                metric_id=FundamentalMetricId.INTEREST_BURDEN,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.ZERO_OPERATING_INCOME,
+                        message="TTM Operating Income (EBIT) is zero; Interest Burden is unavailable.",
+                        details={"ttm_ebit": "0"},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_INTEREST_BURDEN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_ib_facts,
+                    source_concepts=["PRETAX_INCOME", "OPERATING_INCOME"],
+                    source_periods=all_ib_periods,
+                ),
+            )
+        else:
+            ib_val = ttm_ebt / ttm_ebit.value
+            ib_diags = []
+            ib_status = MetricStatus.VALID
+            if ttm_ebit.value < Decimal("0"):
+                ib_status = MetricStatus.DISTORTED
+                ib_diags.append(
+                    MetricDiagnostic(
+                        code=DiagnosticCode.DISTORTED_OPERATING_EARNINGS,
+                        message="TTM Operating Income (EBIT) is negative; Interest Burden ratio is distorted.",
+                        details={"ttm_ebit": str(ttm_ebit.value)},
+                    )
+                )
+            interest_burden = MetricResult(
+                metric_id=FundamentalMetricId.INTEREST_BURDEN,
+                category=MetricCategory.PROFITABILITY,
+                status=ib_status,
+                value=ib_val,
+                unit=Unit.RATIO,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=ib_diags,
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_INTEREST_BURDEN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_ib_facts,
+                    source_concepts=["PRETAX_INCOME", "OPERATING_INCOME"],
+                    source_periods=all_ib_periods,
+                ),
+            )
+
+        # EBIT Margin: TTM Operating Income / TTM Revenue
+        all_em_facts = [
+            *ttm_ebit.provenance.source_fact_ids,
+            *ttm_rev.provenance.source_fact_ids,
+        ]
+        all_em_periods = list(
+            dict.fromkeys(
+                [
+                    *ttm_ebit.provenance.source_periods,
+                    *ttm_rev.provenance.source_periods,
+                ]
+            )
+        )
+        if (
+            ttm_ebit.status != MetricStatus.VALID
+            or ttm_rev.status != MetricStatus.VALID
+            or ttm_ebit.value is None
+            or ttm_rev.value is None
+        ):
+            ebit_margin = MetricResult(
+                metric_id=FundamentalMetricId.EBIT_MARGIN,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=list(ttm_ebit.diagnostics) + list(ttm_rev.diagnostics),
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_EBIT_MARGIN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_em_facts,
+                    source_concepts=["OPERATING_INCOME", "REVENUE"],
+                    source_periods=all_em_periods,
+                ),
+            )
+        elif ttm_rev.value <= Decimal("0"):
+            ebit_margin = MetricResult(
+                metric_id=FundamentalMetricId.EBIT_MARGIN,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[
+                    MetricDiagnostic(
+                        code=DiagnosticCode.NON_POSITIVE_REVENUE,
+                        message="TTM Revenue is zero or negative; EBIT Margin is unavailable.",
+                        details={"ttm_revenue": str(ttm_rev.value)},
+                    )
+                ],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_EBIT_MARGIN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_em_facts,
+                    source_concepts=["OPERATING_INCOME", "REVENUE"],
+                    source_periods=all_em_periods,
+                ),
+            )
+        else:
+            ebm_val = ttm_ebit.value / ttm_rev.value
+            ebit_margin = MetricResult(
+                metric_id=FundamentalMetricId.EBIT_MARGIN,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.VALID,
+                value=ebm_val,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=[],
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_EBIT_MARGIN_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_em_facts,
+                    source_concepts=["OPERATING_INCOME", "REVENUE"],
+                    source_periods=all_em_periods,
+                ),
+            )
+
+        # Asset Turnover & Equity Multiplier (reused from 3-step)
+        step3 = cls.calculate_3step_dupont_ttm(
+            window, prior_anchor, fact_store, allow_point_in_time_fallback
+        )
+        asset_turnover = step3.asset_turnover
+        equity_multiplier = step3.equity_multiplier
+        direct_roe = step3.direct_roe
+
+        all_provenance_facts = list(
+            dict.fromkeys(
+                [
+                    *tax_burden.provenance.source_fact_ids,
+                    *interest_burden.provenance.source_fact_ids,
+                    *ebit_margin.provenance.source_fact_ids,
+                    *asset_turnover.provenance.source_fact_ids,
+                    *equity_multiplier.provenance.source_fact_ids,
+                ]
+            )
+        )
+        all_provenance_concepts = list(
+            dict.fromkeys(
+                [
+                    *tax_burden.provenance.source_concepts,
+                    *interest_burden.provenance.source_concepts,
+                    *ebit_margin.provenance.source_concepts,
+                    *asset_turnover.provenance.source_concepts,
+                    *equity_multiplier.provenance.source_concepts,
+                ]
+            )
+        )
+        all_provenance_periods = list(
+            dict.fromkeys(
+                [
+                    *tax_burden.provenance.source_periods,
+                    *interest_burden.provenance.source_periods,
+                    *ebit_margin.provenance.source_periods,
+                    *asset_turnover.provenance.source_periods,
+                    *equity_multiplier.provenance.source_periods,
+                ]
+            )
+        )
+
+        all_valid = all(
+            f.status in (MetricStatus.VALID, MetricStatus.DISTORTED)
+            and f.value is not None
+            for f in (
+                tax_burden,
+                interest_burden,
+                ebit_margin,
+                asset_turnover,
+                equity_multiplier,
+            )
+        )
+
+        if not all_valid:
+            recon_roe = MetricResult(
+                metric_id=FundamentalMetricId.DUPONT_ROE_5STEP,
+                category=MetricCategory.PROFITABILITY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.PERCENT,
+                currency=None,
+                period=window.ttm_period,
+                diagnostics=list(tax_burden.diagnostics)
+                + list(interest_burden.diagnostics)
+                + list(ebit_margin.diagnostics)
+                + list(asset_turnover.diagnostics)
+                + list(equity_multiplier.diagnostics),
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_DUPONT_ROE_5STEP_TTM",
+                    methodology_version=cls.METHODOLOGY_VERSION,
+                    source_fact_ids=all_provenance_facts,
+                    source_concepts=all_provenance_concepts,
+                    source_periods=all_provenance_periods,
+                ),
+            )
+            return DuPont5StepDecomposition(
+                tax_burden=tax_burden,
+                interest_burden=interest_burden,
+                ebit_margin=ebit_margin,
+                asset_turnover=asset_turnover,
+                equity_multiplier=equity_multiplier,
+                reconstructed_roe=recon_roe,
+                direct_roe=direct_roe,
+                is_reconciled=False,
+                reconciliation_discrepancy=None,
+            )
+
+        recon_val = (
+            tax_burden.value  # type: ignore[operator]
+            * interest_burden.value  # type: ignore[operator]
+            * ebit_margin.value  # type: ignore[operator]
+            * asset_turnover.value  # type: ignore[operator]
+            * equity_multiplier.value  # type: ignore[operator]
+        )
+        recon_status = (
+            MetricStatus.DISTORTED
+            if any(
+                f.status == MetricStatus.DISTORTED
+                for f in (tax_burden, interest_burden)
+            )
+            else MetricStatus.VALID
+        )
+        recon_roe = MetricResult(
+            metric_id=FundamentalMetricId.DUPONT_ROE_5STEP,
+            category=MetricCategory.PROFITABILITY,
+            status=recon_status,
+            value=recon_val,
+            unit=Unit.PERCENT,
+            currency=None,
+            period=window.ttm_period,
+            diagnostics=list(tax_burden.diagnostics)
+            + list(interest_burden.diagnostics),
+            provenance=MetricProvenance(
+                formula_id="FORMULA_DUPONT_ROE_5STEP_TTM",
+                methodology_version=cls.METHODOLOGY_VERSION,
+                source_fact_ids=all_provenance_facts,
+                source_concepts=all_provenance_concepts,
+                source_periods=all_provenance_periods,
+                methodology_notes="TTM 5-Step DuPont = Tax Burden * Interest Burden * EBIT Margin * Asset Turnover * Equity Multiplier.",
             ),
         )
 

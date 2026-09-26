@@ -27,12 +27,40 @@ from aurelius.api.v1.schemas.fundamental import (
     MetricProvenanceSchema,
     MetricResultSchema,
 )
+from aurelius.api.v1.schemas.fundamentals import (
+    AdvancedFundamentalsResponse,
+    CAGRDataPointSchema,
+    CommonSizeItemSchema,
+    CommonSizeStatementsResponse,
+    CommonSizeTableSchema,
+    DuPont3StepResponse,
+    DuPont5StepResponse,
+    DuPontReconciliation,
+    FundamentalTrendsResponse,
+    MetricTrendSeriesSchema,
+    MetricValueResponse,
+    QualityDiagnosticsResponse,
+    TrendDataPointSchema,
+)
 from aurelius.domain.entities.financials import (
     FinancialPeriod,
     FiscalPeriodLabel,
     FiscalPeriodType,
     PeriodType,
     StatementType,
+)
+from aurelius.domain.fundamental.engines.common_size import CommonSizeStatement
+from aurelius.domain.fundamental.engines.dupont import (
+    DuPont3StepDecomposition,
+    DuPont5StepDecomposition,
+)
+from aurelius.domain.fundamental.engines.trend_engine import (
+    CAGRResult,
+    TrendPoint,
+)
+from aurelius.domain.fundamental.models import (
+    MetricDiagnostic,
+    MetricResult,
 )
 from aurelius.services.financial_statement_service import (
     FinancialStatementService,
@@ -42,10 +70,15 @@ from aurelius.services.fundamental_service import (
     FundamentalAnalysisService,
     get_fundamental_analysis_service,
 )
+from aurelius.services.fundamental_trend_service import (
+    FundamentalTrendService,
+    get_fundamental_trend_service,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/market/financials", tags=["Financial Statements"])
+direct_router = APIRouter(prefix="/financials", tags=["Advanced Fundamentals"])
 
 
 def _to_period_schema(period: FinancialPeriod) -> FinancialPeriodSchema:
@@ -289,4 +322,521 @@ async def get_fundamentals(
         periods=periods_schema,
         metrics=metrics_schema,
         diagnostics_summary=diagnostics_schema,
+    )
+
+
+CANONICAL_METRIC_UNITS: dict[str, str] = {
+    "revenue": "CURRENCY",
+    "revenue_growth": "PERCENT",
+    "gross_margin": "PERCENT",
+    "operating_margin": "PERCENT",
+    "net_margin": "PERCENT",
+    "roa": "PERCENT",
+    "roe": "PERCENT",
+    "roic": "PERCENT",
+    "cfo": "CURRENCY",
+    "fcf": "CURRENCY",
+    "fcf_margin": "PERCENT",
+    "cfo_to_net_income": "RATIO",
+    "fcf_to_net_income": "RATIO",
+    "debt_to_ebitda": "RATIO",
+    "net_debt_to_ebitda": "RATIO",
+    "cash_conversion_cycle": "DAYS",
+}
+
+
+def _to_metric_value_response(r: MetricResult) -> MetricValueResponse:
+    return MetricValueResponse(
+        metric_id=r.metric_id.value,
+        category=r.category.value,
+        status=r.status.value,
+        value=r.value,
+        formatted_value=r.formatted_value,
+        unit=r.unit.value,
+        currency=r.currency.value if r.currency else None,
+        period_key=r.period.period_key,
+        is_derived=r.is_derived,
+        diagnostics=[
+            MetricDiagnosticSchema(
+                code=d.code.value,
+                message=d.message,
+                details=d.details,
+            )
+            for d in r.diagnostics
+        ],
+        provenance=MetricProvenanceSchema(
+            formula_id=r.provenance.formula_id,
+            methodology_version=r.provenance.methodology_version,
+            source_fact_ids=r.provenance.source_fact_ids,
+            source_concepts=r.provenance.source_concepts,
+            source_periods=r.provenance.source_periods,
+            provider=r.provenance.provider,
+            methodology_notes=r.provenance.methodology_notes,
+        ),
+    )
+
+
+def _to_dupont_3step_response(r: DuPont3StepDecomposition) -> DuPont3StepResponse:
+    recon = DuPontReconciliation(
+        is_reconciled=r.is_reconciled,
+        reconciliation_discrepancy=r.reconciliation_discrepancy,
+    )
+    return DuPont3StepResponse(
+        net_profit_margin=_to_metric_value_response(r.net_profit_margin),
+        asset_turnover=_to_metric_value_response(r.asset_turnover),
+        equity_multiplier=_to_metric_value_response(r.equity_multiplier),
+        reconstructed_roe=_to_metric_value_response(r.reconstructed_roe),
+        direct_roe=_to_metric_value_response(r.direct_roe),
+        is_reconciled=r.is_reconciled,
+        reconciliation_discrepancy=r.reconciliation_discrepancy,
+        reconciliation=recon,
+    )
+
+
+def _to_dupont_5step_response(r: DuPont5StepDecomposition) -> DuPont5StepResponse:
+    recon = DuPontReconciliation(
+        is_reconciled=r.is_reconciled,
+        reconciliation_discrepancy=r.reconciliation_discrepancy,
+    )
+    return DuPont5StepResponse(
+        tax_burden=_to_metric_value_response(r.tax_burden),
+        interest_burden=_to_metric_value_response(r.interest_burden),
+        ebit_margin=_to_metric_value_response(r.ebit_margin),
+        asset_turnover=_to_metric_value_response(r.asset_turnover),
+        equity_multiplier=_to_metric_value_response(r.equity_multiplier),
+        reconstructed_roe=_to_metric_value_response(r.reconstructed_roe),
+        direct_roe=_to_metric_value_response(r.direct_roe),
+        is_reconciled=r.is_reconciled,
+        reconciliation_discrepancy=r.reconciliation_discrepancy,
+        reconciliation=recon,
+    )
+
+
+def _to_quality_diagnostics_response(
+    sloan: MetricResult,
+    oqr: MetricResult,
+    summary_diags: list[MetricDiagnostic],
+) -> QualityDiagnosticsResponse:
+    return QualityDiagnosticsResponse(
+        sloan_accruals=_to_metric_value_response(sloan),
+        operating_quality_ratio=_to_metric_value_response(oqr),
+        diagnostics_summary=[
+            MetricDiagnosticSchema(
+                code=d.code.value,
+                message=d.message,
+                details=d.details,
+            )
+            for d in summary_diags
+        ],
+    )
+
+
+def _format_common_size_title(stmt: CommonSizeStatement) -> str:
+    p = stmt.period
+    date_str = (
+        p.end_date.isoformat()
+        if p.end_date
+        else (p.instant_date.isoformat() if p.instant_date else p.period_key)
+    )
+    if stmt.statement_type == StatementType.BALANCE_SHEET:
+        return f"Balance Sheet — Quarter Ended {date_str}"
+    elif stmt.statement_type == StatementType.INCOME_STATEMENT:
+        period_lbl = p.fiscal_period.value if p.fiscal_period else ""
+        year_lbl = str(p.fiscal_year) if p.fiscal_year else date_str
+        return f"Income Statement — {period_lbl} {year_lbl}".strip()
+    else:
+        period_lbl = p.fiscal_period.value if p.fiscal_period else ""
+        year_lbl = str(p.fiscal_year) if p.fiscal_year else date_str
+        return f"Cash Flow Statement — {period_lbl} {year_lbl}".strip()
+
+
+def _to_common_size_table_schema(stmt: CommonSizeStatement) -> CommonSizeTableSchema:
+    return CommonSizeTableSchema(
+        statement_type=stmt.statement_type.value,
+        period=_to_period_schema(stmt.period),
+        display_title=_format_common_size_title(stmt),
+        base_concept_name=stmt.base_concept_name,
+        base_value=stmt.base_value,
+        status=stmt.status.value,
+        items=[
+            CommonSizeItemSchema(
+                concept_name=it.concept_name,
+                reported_value=it.reported_value,
+                common_size_percent=it.common_size_percent,
+                status=it.status.value,
+                diagnostics=[
+                    MetricDiagnosticSchema(
+                        code=d.code.value,
+                        message=d.message,
+                        details=d.details,
+                    )
+                    for d in it.diagnostics
+                ],
+                provenance=MetricProvenanceSchema(
+                    formula_id=it.provenance.formula_id,
+                    methodology_version=it.provenance.methodology_version,
+                    source_fact_ids=it.provenance.source_fact_ids,
+                    source_concepts=it.provenance.source_concepts,
+                    source_periods=it.provenance.source_periods,
+                    provider=it.provenance.provider,
+                    methodology_notes=it.provenance.methodology_notes,
+                ),
+            )
+            for it in stmt.items
+        ],
+        diagnostics=[
+            MetricDiagnosticSchema(
+                code=d.code.value,
+                message=d.message,
+                details=d.details,
+            )
+            for d in stmt.diagnostics
+        ],
+        provenance=MetricProvenanceSchema(
+            formula_id=stmt.provenance.formula_id,
+            methodology_version=stmt.provenance.methodology_version,
+            source_fact_ids=stmt.provenance.source_fact_ids,
+            source_concepts=stmt.provenance.source_concepts,
+            source_periods=stmt.provenance.source_periods,
+            provider=stmt.provenance.provider,
+            methodology_notes=stmt.provenance.methodology_notes,
+        ),
+    )
+
+
+def _to_trend_point_schema(tp: TrendPoint) -> TrendDataPointSchema:
+    fmt_val = str(tp.value) if tp.value is not None else "UNAVAILABLE"
+    return TrendDataPointSchema(
+        period=_to_period_schema(tp.period),
+        value=tp.value,
+        formatted_value=fmt_val,
+        status=tp.status.value,
+        qoq_change=tp.qoq_change,
+        yoy_change=tp.yoy_change,
+        ttm_sequential_change=tp.ttm_sequential_change,
+        diagnostics=[
+            MetricDiagnosticSchema(
+                code=d.code.value,
+                message=d.message,
+                details=d.details,
+            )
+            for d in tp.diagnostics
+        ],
+        provenance=MetricProvenanceSchema(
+            formula_id=tp.provenance.formula_id,
+            methodology_version=tp.provenance.methodology_version,
+            source_fact_ids=tp.provenance.source_fact_ids,
+            source_concepts=tp.provenance.source_concepts,
+            source_periods=tp.provenance.source_periods,
+            provider=tp.provenance.provider,
+            methodology_notes=tp.provenance.methodology_notes,
+        ),
+    )
+
+
+def _to_cagr_point_schema(cagr: CAGRResult) -> CAGRDataPointSchema:
+    formatted_cagr = (
+        f"{float(cagr.cagr) * 100:.2f}%" if cagr.cagr is not None else "UNAVAILABLE"
+    )
+    return CAGRDataPointSchema(
+        metric_name=cagr.metric_name,
+        horizon=cagr.horizon,
+        cagr=cagr.cagr,
+        formatted_cagr=formatted_cagr,
+        status=cagr.status.value,
+        start_period=_to_period_schema(cagr.start_period),
+        end_period=_to_period_schema(cagr.end_period),
+        calendar_days=cagr.calendar_days,
+        diagnostics=[
+            MetricDiagnosticSchema(
+                code=d.code.value,
+                message=d.message,
+                details=d.details,
+            )
+            for d in cagr.diagnostics
+        ],
+        provenance=MetricProvenanceSchema(
+            formula_id=cagr.provenance.formula_id,
+            methodology_version=cagr.provenance.methodology_version,
+            source_fact_ids=cagr.provenance.source_fact_ids,
+            source_concepts=cagr.provenance.source_concepts,
+            source_periods=cagr.provenance.source_periods,
+            provider=cagr.provenance.provider,
+            methodology_notes=cagr.provenance.methodology_notes,
+        ),
+    )
+
+
+@router.get(
+    "/{ticker}/advanced-fundamentals",
+    response_model=AdvancedFundamentalsResponse,
+    summary="Get Advanced Fundamentals",
+    description=(
+        "Retrieve ROIC, NOPAT, Invested Capital, 3-Step DuPont, 5-Step DuPont, "
+        "and Quality Diagnostics across Annual, Quarterly, or TTM periods."
+    ),
+)
+@direct_router.get(
+    "/{ticker}/advanced-fundamentals",
+    response_model=AdvancedFundamentalsResponse,
+    summary="Get Advanced Fundamentals",
+    description=(
+        "Retrieve ROIC, NOPAT, Invested Capital, 3-Step DuPont, 5-Step DuPont, "
+        "and Quality Diagnostics across Annual, Quarterly, or TTM periods."
+    ),
+)
+async def get_advanced_fundamentals(
+    ticker: Annotated[
+        str,
+        Path(description="Listing ticker symbol (e.g. 'AAPL')."),
+    ],
+    period_type: Annotated[
+        FiscalPeriodType,
+        Query(description="Period type: ANNUAL, QUARTERLY, or TTM."),
+    ] = FiscalPeriodType.TTM,
+    fiscal_year: Annotated[
+        int | None,
+        Query(description="Target fiscal year (optional)."),
+    ] = None,
+    fiscal_period: Annotated[
+        str | None,
+        Query(description="Target fiscal period (e.g. Q1, Q2, Q3, Q4) (optional)."),
+    ] = None,
+    allow_point_in_time: Annotated[
+        bool,
+        Query(
+            description=(
+                "If True, allows point-in-time ending balance sheet fallback when beginning period is missing. "
+                "Default is False (strict two-point averaging)."
+            )
+        ),
+    ] = False,
+    service: Annotated[
+        FundamentalAnalysisService,
+        Depends(get_fundamental_analysis_service),
+    ] = None,  # type: ignore[assignment]
+) -> AdvancedFundamentalsResponse:
+    adv = await service.get_advanced_fundamentals(
+        ticker=ticker,
+        frequency=period_type,
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+        allow_point_in_time_fallback=allow_point_in_time,
+    )
+    (
+        target_period,
+        reporting_currency,
+        etr_res,
+        nopat_res,
+        ic_res,
+        avg_ic_res,
+        roic_res,
+        dupont3,
+        dupont5,
+        sloan_res,
+        oqr_res,
+        summary_diags,
+    ) = adv
+
+    return AdvancedFundamentalsResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(target_period),
+        reporting_currency=reporting_currency.value if reporting_currency else None,
+        effective_tax_rate=_to_metric_value_response(etr_res),
+        nopat=_to_metric_value_response(nopat_res),
+        invested_capital=_to_metric_value_response(ic_res),
+        average_invested_capital=_to_metric_value_response(avg_ic_res),
+        roic=_to_metric_value_response(roic_res),
+        dupont_3step=_to_dupont_3step_response(dupont3),
+        dupont_5step=_to_dupont_5step_response(dupont5),
+        quality_diagnostics=_to_quality_diagnostics_response(
+            sloan_res, oqr_res, summary_diags
+        ),
+        diagnostics_summary=[
+            MetricDiagnosticSchema(
+                code=d.code.value,
+                message=d.message,
+                details=d.details,
+            )
+            for d in summary_diags
+        ],
+        provenance=MetricProvenanceSchema(
+            formula_id="FORMULA_ADVANCED_FUNDAMENTALS",
+            methodology_version="1.0.0",
+            source_fact_ids=roic_res.provenance.source_fact_ids,
+            source_concepts=roic_res.provenance.source_concepts,
+            source_periods=roic_res.provenance.source_periods,
+            provider=roic_res.provenance.provider,
+            methodology_notes="Advanced Fundamental dossier unifying ROIC, DuPont ROE decompositions, and earnings quality.",
+        ),
+    )
+
+
+@router.get(
+    "/{ticker}/common-size",
+    response_model=CommonSizeStatementsResponse,
+    summary="Get Common-Size Financial Statements",
+    description=(
+        "Retrieve Common-Size Income Statement, Balance Sheet (instant snapshot), "
+        "and Cash Flow Statement across Annual, Quarterly, or TTM periods."
+    ),
+)
+@direct_router.get(
+    "/{ticker}/common-size",
+    response_model=CommonSizeStatementsResponse,
+    summary="Get Common-Size Financial Statements",
+    description=(
+        "Retrieve Common-Size Income Statement, Balance Sheet (instant snapshot), "
+        "and Cash Flow Statement across Annual, Quarterly, or TTM periods."
+    ),
+)
+async def get_common_size(
+    ticker: Annotated[
+        str,
+        Path(description="Listing ticker symbol (e.g. 'AAPL')."),
+    ],
+    period_type: Annotated[
+        FiscalPeriodType,
+        Query(description="Period type: ANNUAL, QUARTERLY, or TTM."),
+    ] = FiscalPeriodType.ANNUAL,
+    fiscal_year: Annotated[
+        int | None,
+        Query(description="Target fiscal year (optional)."),
+    ] = None,
+    fiscal_period: Annotated[
+        str | None,
+        Query(description="Target fiscal period (e.g. Q1, Q2, Q3, Q4) (optional)."),
+    ] = None,
+    service: Annotated[
+        FundamentalAnalysisService,
+        Depends(get_fundamental_analysis_service),
+    ] = None,  # type: ignore[assignment]
+) -> CommonSizeStatementsResponse:
+    target_period, cs_is, cs_bs, cs_cf = await service.get_common_size_statements(
+        ticker=ticker,
+        frequency=period_type,
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+    )
+
+    all_facts = (
+        cs_is.provenance.source_fact_ids
+        + cs_bs.provenance.source_fact_ids
+        + cs_cf.provenance.source_fact_ids
+    )
+    all_concepts = (
+        cs_is.provenance.source_concepts
+        + cs_bs.provenance.source_concepts
+        + cs_cf.provenance.source_concepts
+    )
+    all_periods = (
+        cs_is.provenance.source_periods
+        + cs_bs.provenance.source_periods
+        + cs_cf.provenance.source_periods
+    )
+
+    return CommonSizeStatementsResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        income_statement=_to_common_size_table_schema(cs_is),
+        balance_sheet=_to_common_size_table_schema(cs_bs),
+        cash_flow_statement=_to_common_size_table_schema(cs_cf),
+        period=_to_period_schema(target_period),
+        provenance=MetricProvenanceSchema(
+            formula_id="FORMULA_COMMON_SIZE_STATEMENTS",
+            methodology_version="1.0.0",
+            source_fact_ids=list(dict.fromkeys(all_facts)),
+            source_concepts=list(dict.fromkeys(all_concepts)),
+            source_periods=list(dict.fromkeys(all_periods)),
+            provider="yahoo_finance",
+            methodology_notes="Common-Size Statements dossier. Balance Sheet is strictly point-in-time instant snapshot.",
+        ),
+    )
+
+
+@router.get(
+    "/{ticker}/fundamental-trends",
+    response_model=FundamentalTrendsResponse,
+    summary="Get Fundamental Trends and CAGR",
+    description=(
+        "Retrieve historical fundamental trajectories, sequential QoQ/YoY changes, "
+        "and M4 calendar-time CAGR across Annual, Quarterly, or TTM periods."
+    ),
+)
+@direct_router.get(
+    "/{ticker}/fundamental-trends",
+    response_model=FundamentalTrendsResponse,
+    summary="Get Fundamental Trends and CAGR",
+    description=(
+        "Retrieve historical fundamental trajectories, sequential QoQ/YoY changes, "
+        "and M4 calendar-time CAGR across Annual, Quarterly, or TTM periods."
+    ),
+)
+async def get_fundamental_trends(
+    ticker: Annotated[
+        str,
+        Path(description="Listing ticker symbol (e.g. 'AAPL')."),
+    ],
+    period_type: Annotated[
+        FiscalPeriodType,
+        Query(description="Period type: ANNUAL, QUARTERLY, or TTM."),
+    ] = FiscalPeriodType.ANNUAL,
+    metrics: Annotated[
+        list[str] | None,
+        Query(description="List of canonical metrics to include."),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=20,
+            description="Maximum number of historical periods (default 10, max 20).",
+        ),
+    ] = 10,
+    service: Annotated[
+        FundamentalTrendService,
+        Depends(get_fundamental_trend_service),
+    ] = None,  # type: ignore[assignment]
+) -> FundamentalTrendsResponse:
+    flattened_metrics: list[str] | None = None
+    if metrics:
+        flattened_metrics = [
+            part.strip() for m in metrics for part in m.split(",") if part.strip()
+        ]
+
+    norm_ticker, freq, series_dict, cagr_dict = await service.get_fundamental_trends(
+        ticker=ticker,
+        frequency=period_type,
+        metrics=flattened_metrics,
+        limit=limit,
+    )
+
+    series_schema: dict[str, MetricTrendSeriesSchema] = {}
+    for m_name, points in series_dict.items():
+        unit_str = CANONICAL_METRIC_UNITS.get(m_name, "RATIO")
+        series_schema[m_name] = MetricTrendSeriesSchema(
+            metric_name=m_name,
+            unit=unit_str,
+            points=[_to_trend_point_schema(p) for p in points],
+        )
+
+    cagr_schema: dict[str, list[CAGRDataPointSchema]] = {}
+    for m_name, cagr_list in cagr_dict.items():
+        cagr_schema[m_name] = [_to_cagr_point_schema(c) for c in cagr_list]
+
+    return FundamentalTrendsResponse(
+        ticker=norm_ticker,
+        period_type=freq.value,
+        series=series_schema,
+        cagr_results=cagr_schema,
+        provenance=MetricProvenanceSchema(
+            formula_id="FORMULA_FUNDAMENTAL_TRENDS",
+            methodology_version="1.0.0",
+            source_fact_ids=[],
+            source_concepts=list(series_dict.keys()),
+            source_periods=[],
+            provider="yahoo_finance",
+            methodology_notes="Multi-period fundamental trends with YoY, QoQ, TTM sequential variation and M4 calendar-time CAGR.",
+        ),
     )

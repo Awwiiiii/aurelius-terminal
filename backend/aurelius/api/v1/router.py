@@ -22,7 +22,12 @@ from fastapi import APIRouter
 
 from aurelius import __version__
 from aurelius.api.v1.company import router as company_router
-from aurelius.api.v1.financials import router as financials_router
+from aurelius.api.v1.financials import (
+    direct_router as direct_financials_router,
+)
+from aurelius.api.v1.financials import (
+    router as financials_router,
+)
 from aurelius.api.v1.historical import router as historical_router
 from aurelius.api.v1.market import router as market_router
 from aurelius.api.v1.overview import router as overview_router
@@ -40,6 +45,7 @@ router.include_router(quantitative_router)
 router.include_router(search_router)
 router.include_router(company_router)
 router.include_router(financials_router)
+router.include_router(direct_financials_router)
 
 
 # ---------------------------------------------------------------------------

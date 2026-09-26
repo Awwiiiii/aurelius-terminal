@@ -8,25 +8,44 @@ executes canonical calculation engines, and constructs auditable FundamentalRepo
 
 import logging
 
+from fastapi import Depends
+
 from aurelius.domain.entities.enums import Currency
 from aurelius.domain.entities.financials import (
     FinancialPeriod,
     FinancialStatement,
     FiscalPeriodType,
     StatementType,
+    Unit,
 )
+from aurelius.domain.errors import DataNotFoundError
 from aurelius.domain.fundamental.engines.cash_flow import CashFlowEngine
+from aurelius.domain.fundamental.engines.common_size import (
+    CommonSizeEngine,
+    CommonSizeStatement,
+)
+from aurelius.domain.fundamental.engines.diagnostics_engine import DiagnosticsEngine
+from aurelius.domain.fundamental.engines.dupont import (
+    DuPont3StepDecomposition,
+    DuPont5StepDecomposition,
+    DuPontEngine,
+)
 from aurelius.domain.fundamental.engines.efficiency import EfficiencyEngine
 from aurelius.domain.fundamental.engines.growth import GrowthEngine
 from aurelius.domain.fundamental.engines.liquidity import LiquidityEngine
 from aurelius.domain.fundamental.engines.profitability import ProfitabilityEngine
+from aurelius.domain.fundamental.engines.roic import ROICEngine
 from aurelius.domain.fundamental.engines.solvency import SolvencyEngine
 from aurelius.domain.fundamental.enums import (
     DiagnosticCode,
+    FundamentalMetricId,
+    MetricCategory,
+    MetricStatus,
 )
 from aurelius.domain.fundamental.models import (
     FundamentalReport,
     MetricDiagnostic,
+    MetricProvenance,
     MetricResult,
 )
 from aurelius.domain.fundamental.period_matching import (
@@ -396,17 +415,514 @@ class FundamentalAnalysisService:
             diagnostics_summary=all_diagnostics,
         )
 
+    async def get_advanced_fundamentals(
+        self,
+        ticker: str,
+        frequency: FiscalPeriodType = FiscalPeriodType.TTM,
+        fiscal_year: int | None = None,
+        fiscal_period: str | None = None,
+        allow_point_in_time_fallback: bool = False,
+    ) -> tuple[
+        FinancialPeriod,
+        Currency,
+        MetricResult,
+        MetricResult,
+        MetricResult,
+        MetricResult,
+        MetricResult,
+        DuPont3StepDecomposition,
+        DuPont5StepDecomposition,
+        MetricResult,
+        MetricResult,
+        list[MetricDiagnostic],
+    ]:
+        """
+        Orchestrate Advanced Fundamentals (ROIC, NOPAT, Invested Capital, DuPont, Quality Diagnostics)
+        for a specific target period.
 
-_fundamental_service_instance: FundamentalAnalysisService | None = None
+        Returns:
+          (target_period, reporting_currency, etr, nopat, ic, avg_ic, roic, dupont3, dupont5, sloan, oqr, diagnostics)
+        """
+        normalized_ticker = validate_ticker(ticker)
+        stmt_freq = (
+            FiscalPeriodType.QUARTERLY
+            if frequency == FiscalPeriodType.TTM
+            else frequency
+        )
+
+        income_stmts = await self.statement_service.get_statements(
+            normalized_ticker, StatementType.INCOME_STATEMENT, stmt_freq
+        )
+        balance_stmts = await self.statement_service.get_statements(
+            normalized_ticker, StatementType.BALANCE_SHEET, stmt_freq
+        )
+        cash_flow_stmts = await self.statement_service.get_statements(
+            normalized_ticker, StatementType.CASH_FLOW, stmt_freq
+        )
+
+        all_stmts = [*income_stmts, *balance_stmts, *cash_flow_stmts]
+        if not all_stmts:
+            raise DataNotFoundError(
+                ticker=normalized_ticker,
+                message=f"No financial statements found for {normalized_ticker}.",
+            )
+
+        reporting_currency = Currency.USD
+        for s in all_stmts:
+            if s.currency is not None:
+                reporting_currency = s.currency
+                break
+
+        period_map: dict[str, FinancialPeriod] = {}
+        for stmt in income_stmts:
+            period_map[stmt.period.period_key] = stmt.period
+        for stmt in cash_flow_stmts:
+            if stmt.period.period_key not in period_map:
+                period_map[stmt.period.period_key] = stmt.period
+        for stmt in balance_stmts:
+            if stmt.period.period_key not in period_map:
+                period_map[stmt.period.period_key] = stmt.period
+
+        sorted_periods = sort_periods_chronologically(list(period_map.values()))
+        fact_store = MultiPeriodFactStore(all_stmts)
+
+        # ---------------------------------------------------------------------
+        # TTM Resolution
+        # ---------------------------------------------------------------------
+        if frequency == FiscalPeriodType.TTM:
+            ttm_windows = TTMEngine.find_all_ttm_windows(sorted_periods)
+            if not ttm_windows:
+                raise DataNotFoundError(
+                    ticker=normalized_ticker,
+                    message="Insufficient quarterly periods to establish a valid TTM window (minimum 4 compatible quarters required).",
+                )
+
+            # Target window selection
+            target_window = ttm_windows[-1]
+            if fiscal_year is not None:
+                matching = [
+                    w
+                    for w in ttm_windows
+                    if w.anchor_quarter.fiscal_year == fiscal_year
+                    and (
+                        fiscal_period is None
+                        or (
+                            w.anchor_quarter.fiscal_period
+                            and w.anchor_quarter.fiscal_period.value == fiscal_period
+                        )
+                    )
+                ]
+                if matching:
+                    target_window = matching[-1]
+
+            target_period = target_window.ttm_period
+            anchor_q = target_window.anchor_quarter
+            q_oldest = target_window.quarters[0]
+            prior_anchor = get_prior_period(
+                q_oldest, sorted_periods, FiscalPeriodType.QUARTERLY
+            )
+
+            etr_res = ROICEngine.calculate_ttm_effective_tax_rate(
+                target_window, fact_store
+            )
+            nopat_res = ROICEngine.calculate_ttm_nopat(target_window, fact_store)
+            ic_res = ROICEngine.calculate_invested_capital(anchor_q, fact_store)
+            (
+                avg_ic_val,
+                ic_fact_ids,
+                ic_concepts,
+                ic_periods,
+                ic_diags,
+                used_fb,
+                ic_notes,
+            ) = ROICEngine.calculate_average_invested_capital(
+                current_period=anchor_q,
+                prior_period=prior_anchor,
+                fact_store=fact_store,
+                allow_point_in_time_fallback=allow_point_in_time_fallback,
+            )
+
+            if avg_ic_val is None:
+                avg_ic_res = MetricResult(
+                    metric_id=FundamentalMetricId.INVESTED_CAPITAL,
+                    category=MetricCategory.SOLVENCY,
+                    status=MetricStatus.UNAVAILABLE,
+                    value=None,
+                    unit=Unit.CURRENCY,
+                    currency=reporting_currency,
+                    period=target_period,
+                    diagnostics=ic_diags,
+                    provenance=MetricProvenance(
+                        formula_id="FORMULA_AVERAGE_INVESTED_CAPITAL_TTM",
+                        source_fact_ids=ic_fact_ids,
+                        source_concepts=ic_concepts,
+                        source_periods=ic_periods,
+                        methodology_notes="TTM average invested capital requires ending Q(t) and beginning Q(t-4) snapshots.",
+                    ),
+                )
+            else:
+                avg_ic_res = MetricResult(
+                    metric_id=FundamentalMetricId.INVESTED_CAPITAL,
+                    category=MetricCategory.SOLVENCY,
+                    status=MetricStatus.VALID,
+                    value=avg_ic_val,
+                    unit=Unit.CURRENCY,
+                    currency=reporting_currency,
+                    period=target_period,
+                    diagnostics=ic_diags,
+                    provenance=MetricProvenance(
+                        formula_id="FORMULA_AVERAGE_INVESTED_CAPITAL_TTM",
+                        source_fact_ids=ic_fact_ids,
+                        source_concepts=ic_concepts,
+                        source_periods=ic_periods,
+                        methodology_notes=ic_notes,
+                    ),
+                )
+
+            roic_res = ROICEngine.calculate_ttm_roic(
+                window=target_window,
+                prior_anchor=prior_anchor,
+                fact_store=fact_store,
+                allow_point_in_time_fallback=allow_point_in_time_fallback,
+            )
+
+            dupont3 = DuPontEngine.calculate_3step_dupont_ttm(
+                window=target_window,
+                prior_anchor=prior_anchor,
+                fact_store=fact_store,
+                allow_point_in_time_fallback=allow_point_in_time_fallback,
+            )
+            dupont5 = DuPontEngine.calculate_5step_dupont_ttm(
+                window=target_window,
+                prior_anchor=prior_anchor,
+                fact_store=fact_store,
+                allow_point_in_time_fallback=allow_point_in_time_fallback,
+            )
+
+            sloan_res = DiagnosticsEngine.calculate_sloan_accruals_ttm(
+                window=target_window,
+                prior_anchor=prior_anchor,
+                fact_store=fact_store,
+                allow_point_in_time_fallback=allow_point_in_time_fallback,
+            )
+            oqr_res = DiagnosticsEngine.evaluate_oqr_with_persistence(
+                current_period=anchor_q,
+                all_periods=sorted_periods,
+                frequency=FiscalPeriodType.QUARTERLY,
+                fact_store=fact_store,
+            )
+
+            raw_diags = [
+                *etr_res.diagnostics,
+                *nopat_res.diagnostics,
+                *ic_res.diagnostics,
+                *avg_ic_res.diagnostics,
+                *roic_res.diagnostics,
+                *dupont3.reconstructed_roe.diagnostics,
+                *dupont5.reconstructed_roe.diagnostics,
+                *sloan_res.diagnostics,
+                *oqr_res.diagnostics,
+            ]
+            seen_diag_keys = set()
+            all_summary_diags = []
+            for d in raw_diags:
+                k = (
+                    d.code,
+                    d.message,
+                    tuple(sorted(d.details.items())) if d.details else (),
+                )
+                if k not in seen_diag_keys:
+                    seen_diag_keys.add(k)
+                    all_summary_diags.append(d)
+
+            return (
+                target_period,
+                reporting_currency,
+                etr_res,
+                nopat_res,
+                ic_res,
+                avg_ic_res,
+                roic_res,
+                dupont3,
+                dupont5,
+                sloan_res,
+                oqr_res,
+                all_summary_diags,
+            )
+
+        # ---------------------------------------------------------------------
+        # ANNUAL / QUARTERLY Resolution
+        # ---------------------------------------------------------------------
+        target_period = sorted_periods[-1]
+        if fiscal_year is not None:
+            matching_periods = [
+                p
+                for p in sorted_periods
+                if p.fiscal_year == fiscal_year
+                and (
+                    fiscal_period is None
+                    or (p.fiscal_period and p.fiscal_period.value == fiscal_period)
+                )
+            ]
+            if matching_periods:
+                target_period = matching_periods[-1]
+
+        prior_period = get_prior_period(target_period, sorted_periods, frequency)
+
+        # 1. ROIC & NOPAT
+        etr_res = ROICEngine.calculate_effective_tax_rate(target_period, fact_store)
+        nopat_res = ROICEngine.calculate_nopat(target_period, fact_store)
+        ic_res = ROICEngine.calculate_invested_capital(target_period, fact_store)
+        (
+            avg_ic_val,
+            ic_fact_ids,
+            ic_concepts,
+            ic_periods,
+            ic_diags,
+            used_fb,
+            ic_notes,
+        ) = ROICEngine.calculate_average_invested_capital(
+            current_period=target_period,
+            prior_period=prior_period,
+            fact_store=fact_store,
+            allow_point_in_time_fallback=allow_point_in_time_fallback,
+        )
+
+        if avg_ic_val is None:
+            avg_ic_res = MetricResult(
+                metric_id=FundamentalMetricId.INVESTED_CAPITAL,
+                category=MetricCategory.SOLVENCY,
+                status=MetricStatus.UNAVAILABLE,
+                value=None,
+                unit=Unit.CURRENCY,
+                currency=reporting_currency,
+                period=target_period,
+                diagnostics=ic_diags,
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_AVERAGE_INVESTED_CAPITAL",
+                    source_fact_ids=ic_fact_ids,
+                    source_concepts=ic_concepts,
+                    source_periods=ic_periods,
+                ),
+            )
+        else:
+            avg_ic_res = MetricResult(
+                metric_id=FundamentalMetricId.INVESTED_CAPITAL,
+                category=MetricCategory.SOLVENCY,
+                status=MetricStatus.VALID,
+                value=avg_ic_val,
+                unit=Unit.CURRENCY,
+                currency=reporting_currency,
+                period=target_period,
+                diagnostics=ic_diags,
+                provenance=MetricProvenance(
+                    formula_id="FORMULA_AVERAGE_INVESTED_CAPITAL",
+                    source_fact_ids=ic_fact_ids,
+                    source_concepts=ic_concepts,
+                    source_periods=ic_periods,
+                    methodology_notes=ic_notes,
+                ),
+            )
+
+        roic_res = ROICEngine.calculate_roic(
+            current_period=target_period,
+            prior_period=prior_period,
+            fact_store=fact_store,
+            allow_point_in_time_fallback=allow_point_in_time_fallback,
+        )
+
+        # 2. DuPont Decompositions
+        dupont3 = DuPontEngine.calculate_3step_dupont(
+            current_period=target_period,
+            prior_period=prior_period,
+            fact_store=fact_store,
+            allow_point_in_time_fallback=allow_point_in_time_fallback,
+        )
+        dupont5 = DuPontEngine.calculate_5step_dupont(
+            current_period=target_period,
+            prior_period=prior_period,
+            fact_store=fact_store,
+            allow_point_in_time_fallback=allow_point_in_time_fallback,
+        )
+
+        # 3. Quality Diagnostics
+        sloan_res = DiagnosticsEngine.calculate_sloan_accruals(
+            current_period=target_period,
+            prior_period=prior_period,
+            fact_store=fact_store,
+            allow_point_in_time_fallback=allow_point_in_time_fallback,
+        )
+        oqr_res = DiagnosticsEngine.evaluate_oqr_with_persistence(
+            current_period=target_period,
+            all_periods=sorted_periods,
+            frequency=frequency,
+            fact_store=fact_store,
+        )
+
+        raw_diags = [
+            *etr_res.diagnostics,
+            *nopat_res.diagnostics,
+            *ic_res.diagnostics,
+            *avg_ic_res.diagnostics,
+            *roic_res.diagnostics,
+            *dupont3.reconstructed_roe.diagnostics,
+            *dupont5.reconstructed_roe.diagnostics,
+            *sloan_res.diagnostics,
+            *oqr_res.diagnostics,
+        ]
+        seen_diag_keys = set()
+        all_summary_diags = []
+        for d in raw_diags:
+            k = (
+                d.code,
+                d.message,
+                tuple(sorted(d.details.items())) if d.details else (),
+            )
+            if k not in seen_diag_keys:
+                seen_diag_keys.add(k)
+                all_summary_diags.append(d)
+
+        return (
+            target_period,
+            reporting_currency,
+            etr_res,
+            nopat_res,
+            ic_res,
+            avg_ic_res,
+            roic_res,
+            dupont3,
+            dupont5,
+            sloan_res,
+            oqr_res,
+            all_summary_diags,
+        )
+
+    async def get_common_size_statements(
+        self,
+        ticker: str,
+        frequency: FiscalPeriodType = FiscalPeriodType.ANNUAL,
+        fiscal_year: int | None = None,
+        fiscal_period: str | None = None,
+    ) -> tuple[
+        FinancialPeriod, CommonSizeStatement, CommonSizeStatement, CommonSizeStatement
+    ]:
+        """
+        Orchestrate Common-Size Statements:
+          - Income Statement
+          - Balance Sheet (strictly point-in-time instant snapshot)
+          - Cash Flow Statement
+        """
+        normalized_ticker = validate_ticker(ticker)
+        stmt_freq = (
+            FiscalPeriodType.QUARTERLY
+            if frequency == FiscalPeriodType.TTM
+            else frequency
+        )
+
+        income_stmts = await self.statement_service.get_statements(
+            normalized_ticker, StatementType.INCOME_STATEMENT, stmt_freq
+        )
+        balance_stmts = await self.statement_service.get_statements(
+            normalized_ticker, StatementType.BALANCE_SHEET, stmt_freq
+        )
+        cash_flow_stmts = await self.statement_service.get_statements(
+            normalized_ticker, StatementType.CASH_FLOW, stmt_freq
+        )
+
+        all_stmts = [*income_stmts, *balance_stmts, *cash_flow_stmts]
+        if not all_stmts:
+            raise DataNotFoundError(
+                ticker=normalized_ticker,
+                message=f"No financial statements found for {normalized_ticker}.",
+            )
+
+        period_map: dict[str, FinancialPeriod] = {}
+        for stmt in income_stmts:
+            period_map[stmt.period.period_key] = stmt.period
+        for stmt in cash_flow_stmts:
+            if stmt.period.period_key not in period_map:
+                period_map[stmt.period.period_key] = stmt.period
+        for stmt in balance_stmts:
+            if stmt.period.period_key not in period_map:
+                period_map[stmt.period.period_key] = stmt.period
+
+        sorted_periods = sort_periods_chronologically(list(period_map.values()))
+        fact_store = MultiPeriodFactStore(all_stmts)
+
+        if frequency == FiscalPeriodType.TTM:
+            ttm_windows = TTMEngine.find_all_ttm_windows(sorted_periods)
+            if not ttm_windows:
+                raise DataNotFoundError(
+                    ticker=normalized_ticker,
+                    message="Insufficient quarterly periods to establish a valid TTM window.",
+                )
+
+            target_window = ttm_windows[-1]
+            if fiscal_year is not None:
+                matching = [
+                    w
+                    for w in ttm_windows
+                    if w.anchor_quarter.fiscal_year == fiscal_year
+                    and (
+                        fiscal_period is None
+                        or (
+                            w.anchor_quarter.fiscal_period
+                            and w.anchor_quarter.fiscal_period.value == fiscal_period
+                        )
+                    )
+                ]
+                if matching:
+                    target_window = matching[-1]
+
+            cs_is = CommonSizeEngine.calculate_common_size_ttm_income_statement(
+                target_window, fact_store
+            )
+            # Balance sheet is strictly instant anchor quarter Q(t)
+            cs_bs = CommonSizeEngine.calculate_common_size_balance_sheet(
+                target_window.anchor_quarter, fact_store
+            )
+            cs_cf = CommonSizeEngine.calculate_common_size_ttm_cash_flow(
+                target_window, fact_store
+            )
+
+            return target_window.ttm_period, cs_is, cs_bs, cs_cf
+
+        # Annual / Quarterly
+        target_period = sorted_periods[-1]
+        if fiscal_year is not None:
+            matching_periods = [
+                p
+                for p in sorted_periods
+                if p.fiscal_year == fiscal_year
+                and (
+                    fiscal_period is None
+                    or (p.fiscal_period and p.fiscal_period.value == fiscal_period)
+                )
+            ]
+            if matching_periods:
+                target_period = matching_periods[-1]
+
+        cs_is = CommonSizeEngine.calculate_common_size_income_statement(
+            target_period, fact_store
+        )
+        cs_bs = CommonSizeEngine.calculate_common_size_balance_sheet(
+            target_period, fact_store
+        )
+        cs_cf = CommonSizeEngine.calculate_common_size_cash_flow(
+            target_period, fact_store
+        )
+
+        return target_period, cs_is, cs_bs, cs_cf
 
 
-def get_fundamental_analysis_service() -> FundamentalAnalysisService:
+def get_fundamental_analysis_service(
+    statement_service: FinancialStatementService = Depends(
+        get_financial_statement_service
+    ),
+) -> FundamentalAnalysisService:
     """
     FastAPI dependency provider for FundamentalAnalysisService.
+    Accepts FinancialStatementService via Depends so that dependency_overrides
+    propagate correctly in tests.
     """
-    global _fundamental_service_instance
-    if _fundamental_service_instance is None:
-        _fundamental_service_instance = FundamentalAnalysisService(
-            statement_service=get_financial_statement_service()
-        )
-    return _fundamental_service_instance
+    return FundamentalAnalysisService(statement_service=statement_service)
