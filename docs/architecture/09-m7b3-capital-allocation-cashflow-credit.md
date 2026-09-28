@@ -715,6 +715,40 @@ classDiagram
 - **Instant Concepts**: Sourced from the anchor quarter $Q(t)$ using `TTMEngine.resolve_latest_instant_fact`. Instant facts are **NEVER** summed across quarters.
 - **$\Delta\text{NWC}$ across TTM**: Compares anchor quarter $Q(t)$ to quarter $Q(t-4)$. If $Q(t-4)$ is missing, $\Delta NWC$ is `UNAVAILABLE`.
 
+### 16.3 Market Capitalization Temporal Compatibility Rule
+
+To prevent temporal distortion and eliminate backward contamination where contemporary market prices are improperly paired with past financial disclosures, AURELIUS enforces the following mathematical and temporal rules across all operations:
+
+1. **Market-Cap Observation Date ($D_{obs}$)**:
+   - Defined strictly as the verified calendar date (`as_of_date: date`) attached to the market capitalization observation or quote snapshot.
+   - It represents the specific trading day on which the equity price and shares outstanding were observed.
+   - It must never be inferred or fabricated merely because a query was executed today.
+
+2. **Financial Period Cutoff Date ($D_{fin}$)**:
+   - Defined as the exact financial statement period cutoff date:
+     - For `INSTANT` metrics (Balance Sheet): $D_{fin} = \text{period.instant\_date or period.end\_date}$.
+     - For `DURATION` / `TTM` metrics: $D_{fin} = \text{period.end\_date}$.
+
+3. **Accepted Compatibility Rule**:
+   - Temporal compatibility between a market-cap observation and a financial period strictly requires exact date coincidence:
+     $$D_{obs} == D_{fin}$$
+   - Fuzzy date tolerances (e.g. $\pm N$ days) are strictly forbidden.
+   - If $D_{obs} \neq D_{fin}$, the observation is classified as stale / temporally incompatible.
+
+4. **Absent Date Metadata**:
+   - If an observation lacks an explicit, verified observation date (`as_of_date is None`), temporal compatibility cannot be established.
+   - Missing date metadata does NOT become valid merely because the financial period is the latest reported period.
+   - The market capitalization is evaluated as `UNAVAILABLE`.
+
+5. **Historical Period Protection**:
+   - For any historical financial period ($\text{target\_period} \neq \text{sorted\_periods}[-1]$), current/live market capitalization is strictly prohibited from backward substitution.
+   - Historical periods require an authentic point-in-time observation where $D_{obs} == D_{fin}$.
+   - If no point-in-time observation matching $D_{obs} == D_{fin}$ is available, market capitalization is evaluated as `UNAVAILABLE`.
+
+6. **Diagnostics Emitted**:
+   - When temporal compatibility cannot be established, fails, or is missing, the diagnostic code `MARKET_CAP_UNAVAILABLE` is emitted with an explicit `reason` (`"MISSING_AS_OF_DATE"`, `"TEMPORAL_DATE_MISMATCH"`, `"HISTORICAL_PERIOD_CURRENT_MARKET_CAP_PROHIBITED"`, or `"NO_OBSERVATION_RETURNED"`).
+   - This diagnostic propagates to all downstream valuation and yield metrics (`market_capitalization`, `enterprise_value`, `weight_equity`, `weight_debt`, `weight_preferred`, `dividend_yield`, `buyback_yield`, `gross_shareholder_yield`, `net_shareholder_yield`, and Altman Model 1 factor $X_4$).
+
 ---
 
 ## 17. Provenance Architecture

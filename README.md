@@ -1,8 +1,23 @@
-# AURELIUS — Financial Intelligence & Research Terminal
+# AURELIUS — Financial Research Terminal
 
-AURELIUS is an educational and portfolio financial intelligence and quantitative research terminal inspired by institutional analytical workflows found in professional financial research platforms. 
+AURELIUS is an educational and portfolio quantitative research terminal inspired by the analytical workflows of professional financial research platforms. It is an entirely independent, clean-room implementation demonstrating rigorous financial software engineering, domain-driven architecture, provenance-aware analytics, and modern full-stack web development.
 
-It is an entirely independent, clean-room implementation designed to demonstrate rigorous financial software engineering, mathematical statistics, domain-driven architecture, and modern full-stack web development. AURELIUS does not reproduce, incorporate, or interface with proprietary Bloomberg, Capital IQ, Refinitiv, or other proprietary platforms, systems, interfaces, or data feeds.
+AURELIUS does not reproduce, incorporate, or interface with proprietary Bloomberg, Capital IQ, Refinitiv, or other commercial platforms, systems, interfaces, or data feeds.
+
+---
+
+## Status
+
+| Tier | State |
+|---|---|
+| Latest completed milestone | M7B.3 Phase 2 — implemented & accepted locally |
+| Backend test suite (latest verified run) | **384 passed**, 2 warnings |
+| Ruff check | ✅ Clean |
+| Ruff format --check | ✅ Clean |
+| mypy (affected scope) | ✅ Clean |
+| Phase 2 committed / tagged / pushed | ❌ Not yet |
+
+> M7B.3 Phase 2 (Application Services, APIs & Temporal Market-Cap Resolution) has been implemented and verified locally. It has **not** yet received its final commit, tag, or push to the remote.
 
 ---
 
@@ -12,258 +27,296 @@ AURELIUS is developed under a strict engineering philosophy:
 
 > **CORRECTNESS > COMPLETENESS > SPEED**
 
-Modern financial systems require uncompromising mathematical integrity, defensive validation, and clear domain boundaries. In AURELIUS:
+Modern financial software requires uncompromising mathematical integrity, defensive validation, and clean domain boundaries. In AURELIUS:
+
 - Every financial formula is documented in dedicated reference handbooks before implementation.
 - Every statistical estimator explicitly declares its sample vs. population conventions, Bessel's corrections, and degrees-of-freedom guardrails.
 - Financial data engineering distinguishes between raw transaction prices and retroactive provider adjustments.
-- Application logic is isolated into pure domain entities, decoupled application services, infrastructure provider adapters, and typed HTTP interfaces.
-
-The project currently encompasses completed Milestones 0 through 5, delivering end-to-end capabilities from market data ingestion and company intelligence to historical performance attribution and an institutional-grade quantitative analytics engine.
+- Methodology is auditable: pure domain analytics are isolated from infrastructure, provider adapters, and transport concerns.
+- Market-cap observations carry explicit temporal provenance; historical periods cannot silently consume current market data.
 
 ---
 
-## 2. Current Capabilities
+## 2. What AURELIUS Does
 
-The terminal provides integrated modules across five completed foundational milestones:
+AURELIUS is a multi-module financial research terminal spanning market data ingestion, quantitative analytics, and fundamental financial analysis:
+
+- **Market intelligence**: real-time quotes, OHLCV history, candlestick charting, company profiles, and market-overview dashboards.
+- **Historical analytics**: multi-horizon return attribution, drawdown analysis, moving averages, benchmark comparison, and rolling volatility.
+- **Quantitative analytics**: descriptive statistics, distribution analysis, correlation matrices, beta, and rolling dynamics for single and multi-asset baskets.
+- **Fundamental analysis**: financial statement ingestion and normalization, annual/quarterly/TTM computation, growth, profitability, liquidity, leverage, efficiency, cash-flow analysis, DuPont decomposition, common-size analysis, earnings-quality diagnostics, capital allocation, FCFF/FCFE, reinvestment and fundamental growth drivers, enterprise-value bridge, capital structure, Piotroski F-Score methodology, and Altman Z-Score methodology — all with strict period semantics and provenance-aware market-cap resolution.
+
+---
+
+## 3. Current Capabilities
 
 ### M0 — Architecture & Project Foundation
-- **Layered Clean Architecture**: Strict separation of Domain (`domain/`), Application Services (`services/`), Data Providers (`providers/`), API Transport (`api/v1/`), and User Interface (`frontend/`).
-- **Domain Error Hierarchy**: Structured exceptions (`AureliusError`, `NotFoundError`, `ProviderError`, `DataAlignmentError`, `InsufficientDataError`) mapped directly to deterministic HTTP status codes and structured client error responses.
-- **Type-Safe Configuration**: Centralized settings management using `pydantic-settings` reading from `.env` and environment variables.
+- **Layered clean architecture**: strict separation of Domain, Application Services, Provider Adapters, API Transport, and UI.
+- **Domain error hierarchy**: structured exceptions (`AureliusError`, `NotFoundError`, `ProviderError`, `DataAlignmentError`, `InsufficientDataError`) mapped deterministically to HTTP status codes and structured client error responses.
+- **Type-safe configuration**: centralized settings management via `pydantic-settings` reading from `.env` and environment variables.
 
 ### M1 — Market Data Infrastructure
-- **OHLCV Data Engine**: Daily bar models with chronological ordering and strict price validation (`high >= low`, `high >= open`, `high >= close`, `volume >= 0`).
-- **Provider Normalization**: Resilient provider adapter for Yahoo Finance (`yfinance`) with payload normalization and error recovery.
-- **Real-Time Snapshot Quotes**: Last price, bid, ask, change, percentage change, and volume metrics.
-- **Interactive Charting**: Canvas-based candlestick charting with TradingView Lightweight Charts integration.
+- **OHLCV data engine**: daily bar models with chronological ordering and strict price validation (`high >= low`, `high >= open`, `high >= close`, `volume >= 0`).
+- **Provider normalization**: resilient adapter for Yahoo Finance (`yfinance`) with payload normalization and error recovery.
+- **Real-time snapshot quotes**: last price, bid, ask, change, percentage change, and volume metrics.
+- **Interactive charting**: canvas-based candlestick charting with TradingView Lightweight Charts.
 
 ### M2 — Security Search & Company Profiles
-- **Multi-Asset Ticker Search**: Real-time ticker search with input debouncing and symbol normalization.
-- **Corporate Profiles**: Comprehensive profile data including sector, industry, corporate officers, business descriptions, exchange listings, share counts, and capitalization statistics.
+- **Multi-asset ticker search**: real-time ticker search with input debouncing and symbol normalization.
+- **Corporate profiles**: sector, industry, corporate officers, business descriptions, exchange listings, share counts, and capitalization statistics.
 
-### M3 — Market Overview & Telemetry
-- **Macro Benchmark Dashboard**: Real-time monitoring of major equity benchmarks (S&P 500 `^GSPC`, Nasdaq 100 `^IXIC`, Dow Jones `^DJI`, Russell 2000 `^RUT`), 10-Year Treasury Yields (`^TNX`), and the Cboe Volatility Index (`^VIX`).
-- **Market Movers**: Automated tracking of top gainers, top losers, and most active securities.
-- **Market Breadth & Sector Monitoring**: Visual sector performance tracking and high-level market health metrics.
+### M3 — Market Overview
+- **Macro benchmark dashboard**: real-time monitoring of major equity benchmarks (`^GSPC`, `^IXIC`, `^DJI`, `^RUT`), 10-Year Treasury Yield (`^TNX`), and the Cboe Volatility Index (`^VIX`).
+- **Market movers**: automated tracking of top gainers, top losers, and most active securities.
+- **Sector monitoring**: visual sector performance tracking and market breadth metrics.
 
 ### M4 & M4.1 — Historical Market Analysis
-- **Multi-Horizon Analysis**: Flexible evaluation across standard horizons (`1M`, `3M`, `6M`, `1Y`, `5Y`, `Max`).
-- **Moving Averages on Raw Close**: Simple Moving Averages (`SMA 20`, `SMA 50`, `SMA 200`) and Exponential Moving Average (`EMA 20`) computed strictly on actual transaction close prices (`close`) to preserve technical support/resistance levels.
-- **Drawdown & Peak Analytics**: Dynamic peak-to-date tracking, current drawdown, maximum drawdown (`MDD`) with deterministic tie-breaking, and peak/trough calendar date localization.
-- **Period Performance Attribution**: Period high/low extremes and calendar-time Compound Annual Growth Rate (`CAGR`) computed strictly for time spans $\ge 1$ calendar year (withheld for sub-year horizons).
-- **Benchmark Comparative Tracking**: Relative normalized performance comparison against S&P 500 (`^GSPC`) aligned to a synchronized common base date.
-- **Stabilized SVG Visualizations**: Dedicated sub-panels for rolling volatility, multi-series SVG overlays, and synchronized crosshair scrubbing.
+- **Multi-horizon analysis**: flexible evaluation across `1M`, `3M`, `6M`, `1Y`, `5Y`, `Max` horizons.
+- **Moving averages on raw close**: SMA 20, SMA 50, SMA 200, and EMA 20 computed strictly on actual transaction close prices to preserve historical support/resistance levels.
+- **Drawdown & peak analytics**: running peak tracking, current drawdown, maximum drawdown (MDD) with deterministic tie-breaking, and peak/trough calendar date localization.
+- **CAGR**: calendar-time compound annual growth rate, withheld for sub-year horizons to prevent misleading extrapolation.
+- **Benchmark comparison**: relative normalized performance against S&P 500 (`^GSPC`) over a synchronized common base date.
 
 ### M5 — Quantitative Analytics Foundation
-- **Single-Ticker Statistical Profile**: Complete univariate descriptive statistics, percentile distributions, and tail risk metrics.
-- **Multi-Ticker Cross-Asset Analysis**: Pairwise covariance and Pearson correlation matrix calculation across configurable multi-asset baskets.
-- **Deterministic Distribution Engine**: Frequency histogram binning using Freedman-Diaconis adaptive sizing with zero data fabrication.
-- **Rolling Dynamics**: Configurable rolling-window statistics with zero-indexed warm-up periods.
-- **Strict Data Alignment**: Calendar date inner-join alignment across disparate security trading calendars.
+- **Single-ticker statistical profile**: complete univariate descriptive statistics, percentile distributions, and tail risk metrics.
+- **Multi-ticker cross-asset analysis**: pairwise covariance and Pearson correlation matrices across configurable multi-asset baskets.
+- **Deterministic distribution engine**: frequency histogram binning using Freedman-Diaconis adaptive sizing with zero data fabrication.
+- **Rolling dynamics**: configurable rolling-window statistics with zero-indexed warm-up periods.
+- **Strict data alignment**: calendar-date inner-join alignment across disparate security trading calendars.
+
+### M6 — Financial Statement Infrastructure
+- Financial statement ingestion, period normalization, and fiscal-calendar semantics.
+- Structured financial period entities with annual, quarterly, and TTM classifications.
+- Financial concept/fact taxonomy with provenance and diagnostic metadata.
+
+### M7A — Fundamental Analysis Foundation
+- Fundamental analysis entity layer, period registry, and base computation framework.
+- Foundation for all downstream ratio, valuation, and diagnostic engines.
+
+### M7B.1 — TTM Engine
+- Trailing-twelve-month (TTM) computation from quarterly financial data.
+- Strict period boundary semantics and fiscal-calendar alignment.
+
+### M7B.2 — Advanced Fundamental Analysis Engine & Workspace
+- **Growth analysis**: revenue, earnings, and cash-flow growth rates.
+- **Profitability**: gross margin, operating margin, net margin, EBITDA margin, return on equity (ROE), return on assets (ROA), return on invested capital (ROIC).
+- **Liquidity**: current ratio, quick ratio, cash ratio.
+- **Leverage**: debt-to-equity, debt-to-assets, interest coverage, net debt.
+- **Efficiency**: asset turnover, inventory turnover, receivables turnover, days outstanding metrics.
+- **DuPont analysis**: three-factor and five-factor decomposition.
+- **Common-size analysis**: income statement and balance sheet normalization.
+- **Trend analysis**: directional trend detection across financial metrics.
+- **Earnings-quality diagnostics**: accrual detection and quality scoring.
+- Dedicated frontend fundamental analysis workspace with structured display.
+
+### M7B.3 — Capital Allocation, Cash Flow & Credit
+
+**Phase 1 — Capital Allocation, Cash Flow & Credit Domain Engines** (`milestone-7b.3-phase1` — ✅ Complete & Tagged):
+- **Operating net working capital (NWC) & ΔNWC**: strict balance-sheet-driven computation.
+- **Free cash flow to the firm (FCFF)** and **free cash flow to equity (FCFE)**: multi-path derivation with explicit input sourcing.
+- **Reinvestment rate and fundamental growth drivers**: reinvestment-driven organic growth estimation.
+- **Enterprise-value bridge**: equity → enterprise-value decomposition with net-debt adjustment.
+- **Capital structure analysis**: debt/equity composition, net leverage, and capital-mix metrics.
+- **Piotroski F-Score methodology**: nine-signal scoring framework across profitability, leverage, and operating efficiency signals.
+- **Altman Z-Score methodology**: classic five-factor distress-prediction model (public-company formulation).
+
+**Phase 2 — Application Services, APIs & Temporal Market-Cap Resolution** (✅ Implemented & accepted locally — not yet committed/tagged):
+- `MarketCapObservation` canonical value object carrying `value`, `as_of_date`, `currency`, and `source`.
+- `MarketCapResolver` centralizing all market-cap resolution through strict temporal provenance.
+- Application services and REST API endpoints exposing capital allocation, cash-flow, and credit domain results.
+- Operations layer organizing service orchestration.
 
 ---
 
-## 3. Architecture
+## 4. Architecture
 
 AURELIUS follows Domain-Driven Design (DDD) principles with unidirectional dependencies:
 
 ```
-aurelius/
-├── backend/
-│   ├── aurelius/
-│   │   ├── api/v1/         # FastAPI REST endpoints & Pydantic response schemas
-│   │   ├── domain/         # Pure domain entities, value objects & financial analytics
-│   │   │   ├── analytics/  # Returns, statistics, quantiles, distributions, multivariate, rolling
-│   │   │   └── entities/   # Market, company, historical, and quantitative entities
-│   │   ├── infrastructure/ # Logging, caching, and telemetry primitives
-│   │   ├── providers/      # External provider adapters (Yahoo Finance / yfinance)
-│   │   ├── services/       # Application orchestrators coordinating retrieval and analytics
-│   │   └── settings.py     # Pydantic-settings configuration loader
-│   └── tests/
-│       ├── integration/    # Provider integration and network-dependent tests
-│       └── unit/           # Comprehensive domain math, service, and API tests
-├── frontend/
-│   ├── src/
-│   │   ├── api/            # Typed API client contracts
-│   │   ├── components/     # Specialized workspace UI components
-│   │   │   ├── historical/ # Historical charts, moving averages, and drawdown panels
-│   │   │   └── quantitative/# Quant workbench, statistics tables, histogram, correlation matrix
-│   │   ├── pages/          # Terminal views (Search, Overview, History, Quantitative)
-│   │   └── index.css       # Monochromatic institutional design system (Vanilla CSS)
-│   └── vite.config.ts      # Vite server configuration with reverse proxy
-├── docs/                   # Architecture decision records and Finance Handbook
-└── scripts/                # Setup and automation scripts
+backend/
+└── aurelius/
+    ├── api/                  # FastAPI REST endpoints & Pydantic response schemas
+    ├── domain/               # Pure domain layer — no I/O, no framework dependencies
+    │   ├── analytics/        # Returns, statistics, quantiles, distributions, multivariate, rolling
+    │   ├── entities/         # Market, company, historical, quantitative & financial entities
+    │   └── fundamental/      # Financial-domain engines (growth, profitability, liquidity,
+    │                         #   leverage, efficiency, DuPont, cash flow, credit, capital allocation)
+    ├── infrastructure/       # Logging, caching, and telemetry primitives
+    ├── providers/            # External provider adapters (Yahoo Finance / yfinance)
+    ├── services/             # Application orchestrators + operations layer
+    │   └── operations/       # Fine-grained service operations
+    └── settings.py           # Pydantic-settings configuration loader
+
+frontend/
+└── src/
+    ├── api/                  # Typed API client contracts
+    ├── components/           # Specialized workspace UI components
+    │   ├── historical/       # Historical charts, moving averages, drawdown panels
+    │   ├── quantitative/     # Quant workbench, statistics tables, histogram, correlation matrix
+    │   └── fundamentals/     # Fundamental analysis workspace
+    ├── pages/                # Terminal views
+    └── index.css             # Monochromatic institutional dark-mode design system
+
+docs/
+├── architecture/             # Architecture decision records & milestone design documents
+└── finance/                  # Finance handbook: methodology, conventions, formula references
 ```
 
-### Key Architectural Boundaries:
-1. **Pure Domain Analytics**: The `domain/analytics/` module is entirely decoupled from external frameworks, databases, and I/O. Functions accept primitive float/int sequences and return typed domain objects.
-2. **Provider Isolation**: Third-party APIs (`yfinance`) are encapsulated within `providers/`. Changes in external schema formats never propagate beyond the adapter layer.
-3. **Application Services**: The `services/` layer handles asynchronous orchestration, caching, inner data alignment, and dispatching computational workloads.
-4. **Transport Layer**: The `api/v1/` endpoints enforce OpenAPI input validation and output schema serialization using Pydantic v2.
+### Key Architectural Boundaries
+
+| Layer | Responsibility |
+|---|---|
+| **Pure domain analytics** (`domain/analytics/`) | Stateless mathematical functions on primitive sequences; zero I/O, zero framework dependencies |
+| **Financial-domain engines** (`domain/fundamental/`) | Financial ratio, cash-flow, and credit engines operating on typed domain entities |
+| **Provider adapters** (`providers/`) | Third-party API encapsulation; schema changes are absorbed here and never propagate inward |
+| **Application services / operations** (`services/`) | Async orchestration, caching, data alignment, and computational dispatch |
+| **API transport** (`api/`) | OpenAPI input validation and output schema serialization via Pydantic v2 |
+| **React/TypeScript frontend** (`frontend/`) | Typed UI components and workspace views consuming the REST API |
+
+Detailed architecture decisions and design rationale are documented in [`docs/architecture/`](docs/architecture/).
 
 ---
 
-## 4. Technology Stack
+## 5. Financial & Quantitative Methodology
 
-| Layer | Component | Technology | Rationale |
-|---|---|---|---|
-| **Backend Runtime** | Language | Python 3.12 | Modern type hints, high-performance runtime features |
-| **Package Management** | Dependency Manager | uv | Deterministic lockfiles and fast dependency resolution |
-| **API Framework** | REST API | FastAPI | Async ASGI framework with native OpenAPI schema generation |
-| **Data Validation** | Schema Validation | Pydantic v2 | High-performance C-based data validation and parsing |
-| **HTTP Client** | Async Requests | HTTPX | Asynchronous HTTP client for provider communication |
-| **Data Normalization** | Series Processing | pandas | Robust time series alignment and tabular manipulation |
-| **Market Data Feed** | Data Adapter | yfinance | Development feed for historical daily OHLCV and quotes |
-| **Frontend Framework** | UI Library | React 19 + TypeScript | Strict static typing, modular component architecture |
-| **Build Tool** | Bundler | Vite | Fast HMR and optimized production bundling |
-| **Styling** | Design System | Vanilla CSS | High-contrast institutional dark mode without utility framework bloat |
-| **Financial Charting** | Canvas Charts | TradingView Lightweight Charts | High-performance canvas-based financial candlestick rendering |
-| **Testing & Quality** | Test Runner | pytest, pytest-asyncio | Full test coverage for async and sync Python code |
-| **Code Quality** | Linting & Formatting | Ruff | Ultra-fast Python linting and formatting |
-| **Frontend QA** | Type Checking | tsc, oxlint | Static TypeScript verification and fast frontend linting |
+AURELIUS adheres to documented, auditable conventions throughout. Methodology highlights:
 
----
+- **Return calculations**: simple return, log return, and cumulative compounded return; explicit distinction between provider-adjusted prices and investor total return.
+- **Statistical estimators**: sample vs. population variance and standard deviation with explicit Bessel's correction; Fisher-Pearson skewness and excess kurtosis with strict small-sample guards (*N* >= 3 / *N* >= 4).
+- **Distribution engine**: Freedman-Diaconis adaptive bin-width sizing; Hyndman-Fan Method 7 percentile interpolation.
+- **Multivariate analytics**: sample covariance, Pearson correlation, market beta, and tracking error with calendar-date inner-join alignment.
+- **Moving averages**: computed on unadjusted transaction close prices to preserve historical technical levels.
+- **CAGR**: withheld for horizons shorter than one calendar year.
+- **Drawdown**: running-peak relative; MDD with deterministic first-occurrence tie-breaking.
+- **Fundamental ratios**: profitability, liquidity, leverage, efficiency, growth, and DuPont — all computed from typed financial period entities with explicit period boundaries.
+- **TTM semantics**: strict trailing-twelve-month summation/averaging with fiscal-calendar alignment.
+- **Earnings quality**: accrual detection and quality-scoring diagnostics.
+- **FCFF / FCFE**: multi-path derivation with explicit input sourcing.
+- **Piotroski F-Score**: nine-signal framework across profitability, leverage/source-of-funds, and operating efficiency signals.
+- **Altman Z-Score**: five-factor public-company distress model.
 
-## 5. Quantitative Analytics
-
-Milestone 5 implements a production-grade mathematical foundation for financial time series analysis:
-
-### Return Calculations
-- **Simple Return**: $R_t = \frac{P_t - P_{t-1}}{P_{t-1}}$
-- **Log Return**: $r_t = \ln\left(\frac{P_t}{P_{t-1}}\right)$
-- **Cumulative Compounded Return**: $\prod_{t=1}^T (1 + R_t) - 1$
-
-### Univariate Descriptive Statistics
-- **Arithmetic Mean**: $\bar{R} = \frac{1}{N} \sum_{i=1}^N R_i$
-- **Geometric Mean**: $\left(\prod_{i=1}^N (1 + R_i)\right)^{1/N} - 1$ (computed on gross returns $1 + R_i$)
-- **Sample Variance**: $s^2 = \frac{1}{N - 1} \sum_{i=1}^N (R_i - \bar{R})^2$ (unbiased with Bessel's correction $N-1$)
-- **Population Variance**: $\sigma^2 = \frac{1}{N} \sum_{i=1}^N (R_i - \mu)^2$
-- **Sample Standard Deviation**: $s = \sqrt{s^2}$
-- **Population Standard Deviation**: $\sigma = \sqrt{\sigma^2}$
-- **Median**: Middle value of sorted observations (or mean of two central values for even $N$)
-- **Range**: $\max(R) - \min(R)$
-- **Interquartile Range (IQR)**: $Q_{75} - Q_{25}$ using Hyndman-Fan Method 7 linear interpolation
-- **Mean Absolute Deviation (MAD)**: $\frac{1}{N} \sum_{i=1}^N |R_i - \text{Median}(R)|$
-
-### Shape & Higher Moments
-- **Fisher-Pearson Sample Skewness**:
-  $$G_1 = \frac{N}{(N-1)(N-2)} \sum_{i=1}^N \left(\frac{R_i - \bar{R}}{s}\right)^3 \quad (N \ge 3)$$
-- **Sample Excess Kurtosis**:
-  $$G_2 = \frac{N(N+1)}{(N-1)(N-2)(N-3)} \sum_{i=1}^N \left(\frac{R_i - \bar{R}}{s}\right)^4 - \frac{3(N-1)^2}{(N-2)(N-3)} \quad (N \ge 4)$$
-  *(Evaluates to 0 for a standard normal distribution. Strictly returns `None` when $N < 4$.)*
-
-### Distribution & Histogram Engine
-- **Percentiles**: Continuous quantile interpolation using Method 7 ($h = (N - 1)p + 1$, linear weighting between adjacent ranks).
-- **Freedman-Diaconis Bin Width**:
-  $$h = 2 \times \text{IQR} \times N^{-1/3}$$
-  Determines optimal histogram bin count adaptively based on sample size and spread, guarded against zero IQR degeneracy.
-
-### Multivariate & Systematic Risk
-- **Sample Covariance**:
-  $$\text{Cov}(X, Y) = \frac{1}{N-1} \sum_{i=1}^N (X_i - \bar{X})(Y_i - \bar{Y})$$
-- **Pearson Correlation**:
-  $$r_{xy} = \frac{\text{Cov}(X, Y)}{s_x s_y}$$
-- **Correlation Matrix**: Deterministic symmetric $M \times M$ matrix with unit diagonal ($r_{ii} = 1.0$), computed over the pairwise common date intersection.
-- **Market Beta**:
-  $$\beta = \frac{\text{Cov}(R_i, R_m)}{s_m^2}$$
-- **Tracking Error**: Sample standard deviation of active return differentials ($R_i - R_b$), annualized via $\sqrt{252}$:
-  $$\text{TE} = s(R_i - R_b) \times \sqrt{252}$$
-
-### Rolling Dynamics & Alignment
-- **Rolling Statistics**: Rolling mean, rolling annualized volatility ($s \times \sqrt{252}$), and rolling covariance/correlation across rolling windows ($W$). Values prior to $W$ observations return `null` to respect the warm-up period.
-- **Inner Date Alignment**: All multi-asset analytics enforce strict calendar-date intersection matching. Non-overlapping trading days, holidays, and missing dates are excluded before calculating returns.
+Full formula derivations, conventions, and guardrail specifications are documented in [`docs/finance/`](docs/finance/).
 
 ---
 
-## 6. Financial Methodology
+## 6. Data & Provenance
 
-AURELIUS adheres to rigorous financial modeling conventions:
+### Market Data
+- **Source**: unofficial Yahoo Finance API via `yfinance`.
+- **Quotes may be delayed** by 15 minutes or more; treat all market data as potentially delayed.
+- **Ingestion**: provider adapters validate payload integrity, normalize column casing, ensure chronological ordering, and detect missing or malformed bars.
 
-1. **Provider Adjusted Prices vs. Total Return**:
-   Adjusted close prices provided by Yahoo Finance account for stock splits and historical cash dividend distributions. AURELIUS utilizes `adj_close` for historical returns, volatility, and drawdowns. However, this is treated as *provider-adjusted historical price data* and is **not** represented as an exact investor total return. It does not model dividend reinvestment timing, transaction costs, taxes, or cash drag.
-2. **Moving Averages on Unadjusted Close**:
-   Moving averages (SMA 20, SMA 50, SMA 200, EMA 20) are calculated strictly on actual historical transaction prices (`close`). Calculating moving averages on dividend-adjusted prices distorts historical support and resistance levels.
-3. **Calendar-Time CAGR**:
-   Compound Annual Growth Rate uses calendar year fractional duration ($(\text{End Date} - \text{Start Date}) / 365.25$). For horizons shorter than one full calendar year ($< 365$ days), CAGR is withheld (`None`) to prevent misleading extrapolation of short-term volatility.
-4. **Drawdown Calculation & Tie-Breaking**:
-   Drawdowns are computed relative to running historical peaks. Maximum Drawdown (MDD) uses deterministic tie-breaking (first occurrence of maximum drop), tracking exact peak and trough dates.
-5. **Small-Sample Guardrails**:
-   Mathematical estimators strictly enforce degrees-of-freedom requirements. When samples are insufficient ($N < 2$ for variance, $N < 3$ for skewness, $N < 4$ for excess kurtosis), estimators gracefully return `None` rather than fabricating zero values or raising unhandled exceptions.
+### Financial Statements
+- Financial period entities carry explicit fiscal-period boundaries, period type (annual / quarterly / TTM), and source provenance.
+
+### Market-Cap Temporal Provenance
+
+AURELIUS introduced a canonical `MarketCapObservation` value object containing:
+
+| Field | Description |
+|---|---|
+| `value` | Market capitalization amount |
+| `as_of_date` | Explicit observation date |
+| `currency` | Currency denomination |
+| `source` | Data source identifier |
+
+Market-cap resolution is centralized through `MarketCapResolver`. A market-cap observation is considered temporally compatible with a financial period **only when**:
+
+```
+D_obs == D_fin
+```
+
+where `D_obs` is the explicit market-cap observation date and `D_fin` is the financial period cutoff date.
+
+- Missing `as_of_date` metadata is treated as **unavailable** — not estimated or inferred.
+- Historical financial periods **cannot** consume today's or any current market capitalization.
+- There is no fuzzy date matching or tolerance window.
+
+This design ensures that enterprise-value computations, EV/EBITDA multiples, and price-to-book ratios derived from historical periods are temporally coherent with the financial data they accompany.
 
 ---
 
-## 7. Data Sources
-
-- **Market Data Feed**: Development market data is obtained via the unofficial Yahoo Finance API via `yfinance`.
-- **Macro Benchmarks**: Index tickers (`^GSPC`, `^IXIC`, `^DJI`, `^RUT`, `^TNX`, `^VIX`) provide macro context.
-- **Resilience**: Ingestion adapters validate payload integrity, normalize column casing, ensure chronological sorting, and detect missing or malformed bars.
-
----
-
-## 8. Testing & Verification
+## 7. Verification & Quality
 
 AURELIUS enforces continuous verification across all tiers:
 
-- **182 Passed Pytest Tests**: Complete test suite spanning unit, domain, service, API, and integration tests.
-- **29 Passed M4 Regression Tests**: Preserving historical moving average, drawdown, volatility, and benchmark mathematical integrity.
-- **Ruff Code Audit**: 100% compliance on linting (`ruff check`) and formatting (`ruff format --check`) across 97 Python files.
-- **Frontend Production Build**: Zero-error compilation via TypeScript compiler (`tsc -b`) and Vite production bundler.
-- **API Smoke Verification**: Active verification of all core endpoints (Health, Quotes, OHLCV, Historical Analysis, Single-Ticker Quantitative, Multi-Ticker Correlation).
+- **Backend test suite**: **384 passed**, 2 warnings (latest verified run). Spans unit, domain, service, API, and integration tests.
+- **No Phase 1 domain engines or tests were modified** during Phase 2 implementation; mathematical integrity of M7B.3 Phase 1 engines is preserved.
+- **Ruff**: 100% compliance on linting (`ruff check`) and formatting (`ruff format --check`).
+- **mypy**: passes for all affected source and test scope.
+- **Frontend**: zero-error compilation via TypeScript compiler (`tsc -b`) and Vite production bundler.
+
+---
+
+## 8. Technology Stack
+
+| Layer | Technology |
+|---|---|
+| **Language** | Python 3.12 |
+| **Package management** | uv |
+| **API framework** | FastAPI |
+| **Schema validation** | Pydantic v2 |
+| **HTTP client** | HTTPX |
+| **Data processing** | pandas |
+| **Market data adapter** | yfinance |
+| **Frontend framework** | React + TypeScript |
+| **Build tool** | Vite |
+| **Styling** | Vanilla CSS (institutional dark-mode design system) |
+| **Financial charting** | TradingView Lightweight Charts |
+| **Test runner** | pytest, pytest-asyncio |
+| **Linting & formatting** | Ruff |
+| **Type checking (backend)** | mypy |
+| **Type checking (frontend)** | tsc |
 
 ---
 
 ## 9. Milestone Roadmap
 
-| Milestone | Title | Status | Commit / Tag |
+| Milestone | Title | Status | Tag / Commit |
 |---|---|---|---|
-| **M0** | Architecture & Project Foundation | ✅ Complete | `b18309e` (`milestone-0`) |
-| **M1** | Market Data Infrastructure | ✅ Complete | `c8208ea` (`milestone-1`) |
-| **M2** | Security Search & Company Profiles | ✅ Complete | `6c921fe` (`milestone-2`) |
-| **M3** | Market Overview | ✅ Complete | `12b91f9` (`milestone-3`) |
-| **M4** | Historical Market Analysis | ✅ Complete | `7c15d80` (`milestone-4`) |
-| **M4.1**| Historical UI Stabilization | ✅ Complete | `cb601d3` |
-| **M5** | Quantitative Analytics Foundation | ✅ Complete | `b6e2d9f` (`milestone-5`) |
-| **M6** | Financial Statement Infrastructure | ⏳ Planned | — |
-| **M7** | Financial Ratio & Valuation Engine | ⏳ Planned | — |
-| **M8** | Factor Research & Asset Pricing | ⏳ Planned | — |
-| **M9** | Portfolio Optimization & Risk Engine | ⏳ Planned | — |
+| **M0** | Architecture & Project Foundation | ✅ Complete 🔒 | `milestone-0` (`b18309e`) |
+| **M1** | Market Data Infrastructure | ✅ Complete 🔒 | `milestone-1` (`c8208ea`) |
+| **M2** | Security Search & Company Profiles | ✅ Complete 🔒 | `milestone-2` (`6c921fe`) |
+| **M3** | Market Overview | ✅ Complete 🔒 | `milestone-3` (`12b91f9`) |
+| **M4** | Historical Market Analysis | ✅ Complete 🔒 | `milestone-4` (`7c15d80`) |
+| **M4.1** | Historical UI Stabilization | ✅ Complete 🔒 | `cb601d3` |
+| **M5** | Quantitative Analytics Foundation | ✅ Complete 🔒 | `milestone-5` (`b6e2d9f`) |
+| **M6** | Financial Statement Infrastructure | ✅ Complete 🔒 | `milestone-6` (`de67fa4`) |
+| **M7A** | Fundamental Analysis Foundation | ✅ Complete 🔒 | `milestone-7a` (`521e12a`) |
+| **M7B.1** | TTM Engine | ✅ Complete 🔒 | `milestone-7b.1` (`a71923f`) |
+| **M7B.2** | Advanced Fundamental Analysis Engine & Workspace | ✅ Complete 🔒 | `milestone-7b.2-phase4` (`2e92878`) |
+| **M7B.3 Ph.1** | Capital Allocation, Cash Flow & Credit Domain Engines | ✅ Complete 🔒 | `milestone-7b.3-phase1` (`8365188`) |
+| **M7B.3 Ph.2** | Application Services, APIs & Temporal Market-Cap Resolution | ✅ Implemented (local, not yet committed/tagged) | — |
+| **M8** | Valuation Engine | ⏳ Planned | — |
+| **M9** | Peer Comparison | ⏳ Planned | — |
+| **M10** | Financial Screener | ⏳ Planned | — |
+| **M11** | Portfolio Analytics | ⏳ Planned | — |
+| **M12** | Risk Engine | ⏳ Planned | — |
+| **M13** | Quant Research Workspace | ⏳ Planned | — |
+| **M14** | Backtesting Engine | ⏳ Planned | — |
+| **M15** | Factor Research | ⏳ Planned | — |
+| **M16** | Options & Derivatives | ⏳ Planned | — |
+| **M17** | Advanced Quantitative Research | ⏳ Planned | — |
+| **M18** | Institutional-Style Research Platform | ⏳ Planned | — |
 
 ---
 
-## 10. Project Status
+## 10. Limitations
 
-- **Current State**: Milestone 5 locked and verified.
-- **Active Branch**: `main`.
-- **Working Tree**: Clean.
-- **Milestone Tags**: `milestone-4` (`7c15d80`), `milestone-5` (`b6e2d9f`).
-
----
-
-## 11. Limitations
-
-1. **Development Data Feed**: Market data is sourced from an unofficial Yahoo Finance feed. Quotes and prices may be delayed by 15 minutes or more and are subject to rate limiting and provider availability.
-2. **Provider Adjustments**: Adjusted close data represents third-party backward adjustments and is not an exact model of investor total return.
-3. **Security Classifications**: Sector and industry categorizations reflect data provider heuristics and do not represent authoritative GICS or BICS classifications.
-4. **No Order Execution**: AURELIUS contains no trade execution, order routing, broker integration, or portfolio management account connectivity.
-5. **Educational Scope**: AURELIUS is built strictly for educational, research, and portfolio demonstration purposes.
+1. **Development data feed**: market data is sourced from an unofficial Yahoo Finance feed. Quotes and prices may be delayed by 15 minutes or more and are subject to rate limiting and provider availability.
+2. **Provider adjustments**: adjusted close data represents third-party backward adjustments and is not an exact model of investor total return. It does not model dividend reinvestment timing, transaction costs, taxes, or cash drag.
+3. **Security classifications**: sector and industry categorizations reflect data provider heuristics and do not represent authoritative GICS or BICS classifications.
+4. **No order execution**: AURELIUS contains no trade execution, order routing, broker integration, or portfolio account connectivity.
+5. **Educational scope**: AURELIUS is built strictly for educational, research, and portfolio demonstration purposes. It is not a production financial service.
 
 ---
 
-## 12. Future Work
-
-- **Milestone 6**: Financial Statement Infrastructure (Balance Sheets, Income Statements, Cash Flow Statements, period normalization, restatement handling).
-- **Milestone 7**: Ratio Analysis & Valuation Models (multiples, DCF models, WACC calculation).
-- **Milestone 8**: Multi-Factor Risk Modeling (Fama-French 3-factor and 5-factor regression analysis).
-- **Milestone 9**: Portfolio Construction (Markowitz Mean-Variance optimization, Black-Litterman allocation, Value at Risk / CVaR simulation).
-
----
-
-## 13. Local Development
+## 11. Local Development
 
 ### Prerequisites
-- **Python**: 3.12 or higher
-- **Node.js**: 18 or higher (LTS recommended)
-- **uv**: Modern Python package manager ([install uv](https://docs.astral.sh/uv/))
+- **Python** 3.12 or higher
+- **Node.js** 18 or higher (LTS recommended)
+- **uv** — modern Python package manager ([install uv](https://docs.astral.sh/uv/))
 
 ### Quick Start (Automated)
 ```bash
@@ -277,26 +330,26 @@ bash scripts/setup.sh
 
 ### Manual Setup
 
-1. **Environment Configuration**:
+1. **Environment configuration**:
    ```bash
    cp .env.example .env
    ```
 
-2. **Backend Setup**:
+2. **Backend setup**:
    ```bash
    cd backend
    uv sync --dev
    uv run uvicorn aurelius.api.main:app --reload --port 8001
    ```
 
-3. **Frontend Setup** (in a separate terminal):
+3. **Frontend setup** (separate terminal):
    ```bash
    cd frontend
    npm install
    npm run dev
    ```
 
-4. **Verify Application**:
+4. **Verify application**:
    - Terminal Web Interface: `http://localhost:5173`
    - Interactive OpenAPI Docs: `http://localhost:8001/docs`
    - API Health Check: `http://localhost:8001/api/v1/health`
@@ -304,25 +357,40 @@ bash scripts/setup.sh
 ### Running Tests & Quality Checks
 
 ```bash
-# Run backend pytest suite (182 tests)
+# Run full backend pytest suite
 cd backend
 uv run pytest
-
-# Run M4 regression suite
-uv run pytest tests/unit/api/test_historical_endpoints.py tests/unit/domain/analytics/ tests/unit/services/test_historical_analysis_service.py
 
 # Run Ruff linter and formatter check
 uv run ruff check .
 uv run ruff format --check .
 
-# Run frontend build and typecheck
+# Run frontend typecheck and build
 cd ../frontend
 npm run build
 ```
 
 ---
 
-## 14. Disclaimer
+## 12. Future Direction
+
+The planned roadmap builds on the established fundamental analysis infrastructure toward a full-spectrum quantitative research environment:
+
+- **M8 — Valuation Engine**: intrinsic valuation models (DCF, DDM), earnings-based multiples, and EV-based multiples using period-aligned market-cap provenance.
+- **M9 — Peer Comparison**: cross-sectional peer ranking and relative valuation across sectors and industries.
+- **M10 — Financial Screener**: multi-criteria fundamental and quantitative screening across the investable universe.
+- **M11 — Portfolio Analytics**: holdings-level attribution, performance decomposition, and exposure analysis.
+- **M12 — Risk Engine**: factor-based risk decomposition, Value at Risk (VaR), and Conditional Value at Risk (CVaR).
+- **M13 — Quant Research Workspace**: interactive quantitative research environment with scriptable analysis.
+- **M14 — Backtesting Engine**: strategy simulation and historical performance evaluation.
+- **M15 — Factor Research**: systematic factor construction, signal analysis, and Fama-French model regression.
+- **M16 — Options & Derivatives**: options pricing, Greeks computation, and derivatives analytics.
+- **M17 — Advanced Quantitative Research**: advanced statistical modeling and multi-factor portfolio construction.
+- **M18 — Institutional-Style Research Platform**: integrated research publishing, scenario analysis, and presentation tooling.
+
+---
+
+## 13. Disclaimer
 
 AURELIUS is an educational and portfolio financial intelligence project created for software engineering, financial modeling, and quantitative methodology research.
 

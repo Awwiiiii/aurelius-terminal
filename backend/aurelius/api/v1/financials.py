@@ -42,6 +42,23 @@ from aurelius.api.v1.schemas.fundamentals import (
     QualityDiagnosticsResponse,
     TrendDataPointSchema,
 )
+from aurelius.api.v1.schemas.fundamentals.capital_allocation_schemas import (
+    CapitalAllocationResponse,
+    CashFlowWorkingCapitalResponse,
+    FreeCashFlowSectionSchema,
+    FundamentalGrowthSectionSchema,
+    ReinvestmentSectionSchema,
+    WorkingCapitalSectionSchema,
+)
+from aurelius.api.v1.schemas.fundamentals.credit_schemas import (
+    AltmanZScoreSchema,
+    CreditRiskResponse,
+    EnterpriseValueResponse,
+    M7B3ComprehensiveResponse,
+    PiotroskiScoreSchema,
+    PiotroskiSignalSchema,
+    TraceableMetricDiagnosticSchema,
+)
 from aurelius.domain.entities.financials import (
     FinancialPeriod,
     FiscalPeriodLabel,
@@ -61,6 +78,10 @@ from aurelius.domain.fundamental.engines.trend_engine import (
 from aurelius.domain.fundamental.models import (
     MetricDiagnostic,
     MetricResult,
+)
+from aurelius.services.capital_cashflow_credit_service import (
+    CapitalCashflowCreditService,
+    get_capital_cashflow_credit_service,
 )
 from aurelius.services.financial_statement_service import (
     FinancialStatementService,
@@ -839,4 +860,528 @@ async def get_fundamental_trends(
             provider="yahoo_finance",
             methodology_notes="Multi-period fundamental trends with YoY, QoQ, TTM sequential variation and M4 calendar-time CAGR.",
         ),
+    )
+
+
+# =============================================================================
+# M7B.3 HELPER: TRACEABLE DIAGNOSTICS AGGREGATION
+# =============================================================================
+
+
+def _aggregate_traceable_diagnostics(
+    metric_results: list[MetricResult],
+) -> list[TraceableMetricDiagnosticSchema]:
+    """
+    Deduplicate diagnostics across multiple metric results while preserving
+    affected metric traceability.
+    """
+    summary_map: dict[str, dict] = {}
+
+    for res in metric_results:
+        metric_name = res.metric_id.value.lower()
+        for diag in res.diagnostics:
+            code_str = diag.code.value
+            if code_str not in summary_map:
+                summary_map[code_str] = {
+                    "code": code_str,
+                    "message": diag.message,
+                    "severity": "WARNING",
+                    "affected_metric_ids": set(),
+                    "details": dict(diag.details),
+                }
+            summary_map[code_str]["affected_metric_ids"].add(metric_name)
+            summary_map[code_str]["details"].update(diag.details)
+
+    return [
+        TraceableMetricDiagnosticSchema(
+            code=v["code"],
+            message=v["message"],
+            severity=v["severity"],
+            affected_metric_ids=sorted(list(v["affected_metric_ids"])),
+            details=v["details"],
+        )
+        for v in summary_map.values()
+    ]
+
+
+# =============================================================================
+# M7B.3 REST ENDPOINTS
+# =============================================================================
+
+
+@router.get(
+    "/{ticker}/capital-allocation",
+    response_model=CapitalAllocationResponse,
+    summary="Get Capital Allocation & Shareholder Yields",
+    description="Retrieve capital deployment flows, shareholder distributions, and market-cap-based yields.",
+)
+@direct_router.get(
+    "/{ticker}/capital-allocation",
+    response_model=CapitalAllocationResponse,
+    summary="Get Capital Allocation & Shareholder Yields",
+    description="Retrieve capital deployment flows, shareholder distributions, and market-cap-based yields.",
+)
+async def get_capital_allocation(
+    ticker: Annotated[str, Path(description="Listing ticker symbol.")],
+    period_type: Annotated[
+        FiscalPeriodType,
+        Query(description="Period type: ANNUAL, QUARTERLY, or TTM."),
+    ] = FiscalPeriodType.TTM,
+    fiscal_year: Annotated[int | None, Query(description="Target fiscal year.")] = None,
+    fiscal_period: Annotated[
+        str | None, Query(description="Target fiscal period (Q1-Q4).")
+    ] = None,
+    service: Annotated[
+        CapitalCashflowCreditService,
+        Depends(get_capital_cashflow_credit_service),
+    ] = None,  # type: ignore[assignment]
+) -> CapitalAllocationResponse:
+    period, rep_curr, metrics = await service.get_capital_allocation(
+        ticker=ticker,
+        frequency=period_type,
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+    )
+
+    all_metric_results = list(metrics.values())
+    summary_diags = _aggregate_traceable_diagnostics(all_metric_results)
+
+    return CapitalAllocationResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(period),
+        reporting_currency=rep_curr.value if rep_curr else None,
+        operating_cash_flow=_to_metric_value_response(metrics["cfo"]),
+        capital_expenditures=_to_metric_value_response(metrics["capex"]),
+        dividends_paid=_to_metric_value_response(metrics["dividends_paid"]),
+        stock_repurchases=_to_metric_value_response(metrics["stock_repurchases"]),
+        stock_issuance=_to_metric_value_response(metrics["stock_issuance"]),
+        debt_issued=_to_metric_value_response(metrics["debt_issued"]),
+        debt_repaid=_to_metric_value_response(metrics["debt_repaid"]),
+        net_debt_issued=_to_metric_value_response(metrics["net_debt_issued"]),
+        acquisitions_mna=_to_metric_value_response(metrics["acquisitions_mna"]),
+        dividend_yield=_to_metric_value_response(metrics["dividend_yield"]),
+        buyback_yield=_to_metric_value_response(metrics["buyback_yield"]),
+        gross_shareholder_yield=_to_metric_value_response(
+            metrics["gross_shareholder_yield"]
+        ),
+        net_shareholder_yield=_to_metric_value_response(
+            metrics["net_shareholder_yield"]
+        ),
+        diagnostics_summary=summary_diags,
+    )
+
+
+@router.get(
+    "/{ticker}/cash-flows",
+    response_model=CashFlowWorkingCapitalResponse,
+    summary="Get Structured Cash Flows & Working Capital",
+    description="Retrieve Operating NWC, multi-period Delta NWC, FCFF primary/reconciliation, FCFE, Reinvestment, and Growth.",
+)
+@direct_router.get(
+    "/{ticker}/cash-flows",
+    response_model=CashFlowWorkingCapitalResponse,
+    summary="Get Structured Cash Flows & Working Capital",
+    description="Retrieve Operating NWC, multi-period Delta NWC, FCFF primary/reconciliation, FCFE, Reinvestment, and Growth.",
+)
+async def get_cash_flows(
+    ticker: Annotated[str, Path(description="Listing ticker symbol.")],
+    period_type: Annotated[
+        FiscalPeriodType,
+        Query(description="Period type: ANNUAL, QUARTERLY, or TTM."),
+    ] = FiscalPeriodType.TTM,
+    fiscal_year: Annotated[int | None, Query(description="Target fiscal year.")] = None,
+    fiscal_period: Annotated[
+        str | None, Query(description="Target fiscal period (Q1-Q4).")
+    ] = None,
+    service: Annotated[
+        CapitalCashflowCreditService,
+        Depends(get_capital_cashflow_credit_service),
+    ] = None,  # type: ignore[assignment]
+) -> CashFlowWorkingCapitalResponse:
+    period, rep_curr, metrics, recon_res, nb_tier = await service.get_cash_flows(
+        ticker=ticker,
+        frequency=period_type,
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+    )
+
+    all_metric_results = list(metrics.values())
+    summary_diags = _aggregate_traceable_diagnostics(all_metric_results)
+
+    working_cap_sec = WorkingCapitalSectionSchema(
+        operating_current_assets=_to_metric_value_response(metrics["operating_ca"]),
+        operating_current_liabilities=_to_metric_value_response(
+            metrics["operating_cl"]
+        ),
+        operating_nwc=_to_metric_value_response(metrics["operating_nwc"]),
+        delta_nwc=_to_metric_value_response(metrics["delta_nwc"]),
+    )
+
+    fcf_sec = FreeCashFlowSectionSchema(
+        fcff_primary=_to_metric_value_response(metrics["fcff_primary"]),
+        fcff_reconciled=_to_metric_value_response(metrics["fcff_reconciled"]),
+        reconciliation_delta=recon_res.reconciliation_delta,
+        divergence_ratio=recon_res.divergence_ratio,
+        is_divergent=recon_res.is_divergent,
+        fcfe=_to_metric_value_response(metrics["fcfe"]),
+        net_borrowing_tier=nb_tier,
+    )
+
+    reinv_sec = ReinvestmentSectionSchema(
+        reinvestment=_to_metric_value_response(metrics["reinvestment"]),
+        reinvestment_rate=_to_metric_value_response(metrics["reinvestment_rate"]),
+    )
+
+    growth_sec = FundamentalGrowthSectionSchema(
+        fundamental_growth=_to_metric_value_response(metrics["fundamental_growth"]),
+    )
+
+    return CashFlowWorkingCapitalResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(period),
+        reporting_currency=rep_curr.value if rep_curr else None,
+        working_capital=working_cap_sec,
+        free_cash_flow=fcf_sec,
+        reinvestment=reinv_sec,
+        growth=growth_sec,
+        diagnostics_summary=summary_diags,
+    )
+
+
+@router.get(
+    "/{ticker}/enterprise-value",
+    response_model=EnterpriseValueResponse,
+    summary="Get Enterprise Value Bridge & Capital Structure",
+    description="Retrieve EV bridge claims and capital structure weights with strict historical market-cap temporal matching.",
+)
+@direct_router.get(
+    "/{ticker}/enterprise-value",
+    response_model=EnterpriseValueResponse,
+    summary="Get Enterprise Value Bridge & Capital Structure",
+    description="Retrieve EV bridge claims and capital structure weights with strict historical market-cap temporal matching.",
+)
+async def get_enterprise_value(
+    ticker: Annotated[str, Path(description="Listing ticker symbol.")],
+    period_type: Annotated[
+        FiscalPeriodType,
+        Query(description="Period type: ANNUAL, QUARTERLY, or TTM."),
+    ] = FiscalPeriodType.TTM,
+    fiscal_year: Annotated[int | None, Query(description="Target fiscal year.")] = None,
+    fiscal_period: Annotated[
+        str | None, Query(description="Target fiscal period (Q1-Q4).")
+    ] = None,
+    service: Annotated[
+        CapitalCashflowCreditService,
+        Depends(get_capital_cashflow_credit_service),
+    ] = None,  # type: ignore[assignment]
+) -> EnterpriseValueResponse:
+    (
+        period,
+        rep_curr,
+        metrics,
+        pref_case,
+        min_case,
+        cap_struct_res,
+    ) = await service.get_enterprise_value(
+        ticker=ticker,
+        frequency=period_type,
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+    )
+
+    all_metric_results = list(metrics.values())
+    summary_diags = _aggregate_traceable_diagnostics(all_metric_results)
+
+    return EnterpriseValueResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(period),
+        reporting_currency=rep_curr.value if rep_curr else None,
+        market_capitalization=_to_metric_value_response(
+            metrics["market_capitalization"]
+        ),
+        gross_debt=_to_metric_value_response(metrics["gross_debt"]),
+        preferred_equity=_to_metric_value_response(metrics["preferred_equity"]),
+        minority_interest=_to_metric_value_response(metrics["minority_interest"]),
+        cash_and_liquid_investments=_to_metric_value_response(
+            metrics["cash_and_liquid_investments"]
+        ),
+        enterprise_value=_to_metric_value_response(metrics["enterprise_value"]),
+        preferred_equity_disclosure_case=pref_case,
+        minority_interest_disclosure_case=min_case,
+        total_capital=_to_metric_value_response(metrics["total_capital"]),
+        weight_equity=_to_metric_value_response(metrics["weight_equity"]),
+        weight_debt=_to_metric_value_response(metrics["weight_debt"]),
+        weight_preferred=_to_metric_value_response(metrics["weight_preferred"]),
+        diagnostics_summary=summary_diags,
+    )
+
+
+@router.get(
+    "/{ticker}/credit-risk",
+    response_model=CreditRiskResponse,
+    summary="Get Credit Risk & Solvency Scoring",
+    description="Retrieve canonical 9-signal Piotroski F-score and structural Altman Z-score (strictly deterministic dispatch, zero override).",
+)
+@direct_router.get(
+    "/{ticker}/credit-risk",
+    response_model=CreditRiskResponse,
+    summary="Get Credit Risk & Solvency Scoring",
+    description="Retrieve canonical 9-signal Piotroski F-score and structural Altman Z-score (strictly deterministic dispatch, zero override).",
+)
+async def get_credit_risk(
+    ticker: Annotated[str, Path(description="Listing ticker symbol.")],
+    period_type: Annotated[
+        FiscalPeriodType,
+        Query(description="Period type: ANNUAL, QUARTERLY, or TTM."),
+    ] = FiscalPeriodType.TTM,
+    fiscal_year: Annotated[int | None, Query(description="Target fiscal year.")] = None,
+    fiscal_period: Annotated[
+        str | None, Query(description="Target fiscal period (Q1-Q4).")
+    ] = None,
+    service: Annotated[
+        CapitalCashflowCreditService,
+        Depends(get_capital_cashflow_credit_service),
+    ] = None,  # type: ignore[assignment]
+) -> CreditRiskResponse:
+    period, rep_curr, piotroski_res, altman_res = await service.get_credit_risk(
+        ticker=ticker,
+        frequency=period_type,
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+    )
+
+    all_metric_results = [piotroski_res.metric_result, altman_res.metric_result]
+    summary_diags = _aggregate_traceable_diagnostics(all_metric_results)
+
+    piotroski_signals = [
+        PiotroskiSignalSchema(
+            signal_id=s.signal_id,
+            status=s.status,
+            raw_value=s.raw_value,
+            comparison_value=s.comparison_value,
+            notes=s.notes,
+        )
+        for s in piotroski_res.signals
+    ]
+
+    piotroski_schema = PiotroskiScoreSchema(
+        raw_pass_count=piotroski_res.raw_pass_count,
+        evaluated_signal_count=piotroski_res.evaluated_signal_count,
+        total_signal_count=piotroski_res.total_signal_count,
+        coverage_ratio=piotroski_res.coverage_ratio,
+        status=piotroski_res.status.value,
+        metric_result=_to_metric_value_response(piotroski_res.metric_result),
+        signals=piotroski_signals,
+    )
+
+    altman_schema = AltmanZScoreSchema(
+        dispatched_model=altman_res.dispatched_model,
+        dispatch_rationale=altman_res.dispatch_rationale,
+        coefficients=altman_res.coefficients,
+        factors=altman_res.factors,
+        total_score=altman_res.total_score,
+        zone=altman_res.zone,
+        metric_result=_to_metric_value_response(altman_res.metric_result),
+    )
+
+    return CreditRiskResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(period),
+        reporting_currency=rep_curr.value if rep_curr else None,
+        piotroski_f_score=piotroski_schema,
+        altman_z_score=altman_schema,
+        diagnostics_summary=summary_diags,
+    )
+
+
+@router.get(
+    "/{ticker}/comprehensive",
+    response_model=M7B3ComprehensiveResponse,
+    summary="Get Comprehensive Fundamental Analysis Dossier",
+    description="Retrieve unified multi-dimensional fundamental dossier combining Capital Allocation, Cash Flows, EV, and Credit Risk.",
+)
+@direct_router.get(
+    "/{ticker}/comprehensive",
+    response_model=M7B3ComprehensiveResponse,
+    summary="Get Comprehensive Fundamental Analysis Dossier",
+    description="Retrieve unified multi-dimensional fundamental dossier combining Capital Allocation, Cash Flows, EV, and Credit Risk.",
+)
+async def get_comprehensive_dossier(
+    ticker: Annotated[str, Path(description="Listing ticker symbol.")],
+    period_type: Annotated[
+        FiscalPeriodType,
+        Query(description="Period type: ANNUAL, QUARTERLY, or TTM."),
+    ] = FiscalPeriodType.TTM,
+    fiscal_year: Annotated[int | None, Query(description="Target fiscal year.")] = None,
+    fiscal_period: Annotated[
+        str | None, Query(description="Target fiscal period (Q1-Q4).")
+    ] = None,
+    service: Annotated[
+        CapitalCashflowCreditService,
+        Depends(get_capital_cashflow_credit_service),
+    ] = None,  # type: ignore[assignment]
+) -> M7B3ComprehensiveResponse:
+    dossier = await service.get_m7b3_comprehensive_dossier(
+        ticker=ticker,
+        frequency=period_type,
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+    )
+
+    # Convert Capital Allocation
+    ca_period, ca_curr, ca_metrics = dossier["capital_allocation"]
+    ca_resp = CapitalAllocationResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(ca_period),
+        reporting_currency=ca_curr.value if ca_curr else None,
+        operating_cash_flow=_to_metric_value_response(ca_metrics["cfo"]),
+        capital_expenditures=_to_metric_value_response(ca_metrics["capex"]),
+        dividends_paid=_to_metric_value_response(ca_metrics["dividends_paid"]),
+        stock_repurchases=_to_metric_value_response(ca_metrics["stock_repurchases"]),
+        stock_issuance=_to_metric_value_response(ca_metrics["stock_issuance"]),
+        debt_issued=_to_metric_value_response(ca_metrics["debt_issued"]),
+        debt_repaid=_to_metric_value_response(ca_metrics["debt_repaid"]),
+        net_debt_issued=_to_metric_value_response(ca_metrics["net_debt_issued"]),
+        acquisitions_mna=_to_metric_value_response(ca_metrics["acquisitions_mna"]),
+        dividend_yield=_to_metric_value_response(ca_metrics["dividend_yield"]),
+        buyback_yield=_to_metric_value_response(ca_metrics["buyback_yield"]),
+        gross_shareholder_yield=_to_metric_value_response(
+            ca_metrics["gross_shareholder_yield"]
+        ),
+        net_shareholder_yield=_to_metric_value_response(
+            ca_metrics["net_shareholder_yield"]
+        ),
+        diagnostics_summary=_aggregate_traceable_diagnostics(list(ca_metrics.values())),
+    )
+
+    # Convert Cash Flows
+    cf_period, cf_curr, cf_metrics, recon_res, nb_tier = dossier["cash_flows"]
+    cf_resp = CashFlowWorkingCapitalResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(cf_period),
+        reporting_currency=cf_curr.value if cf_curr else None,
+        working_capital=WorkingCapitalSectionSchema(
+            operating_current_assets=_to_metric_value_response(
+                cf_metrics["operating_ca"]
+            ),
+            operating_current_liabilities=_to_metric_value_response(
+                cf_metrics["operating_cl"]
+            ),
+            operating_nwc=_to_metric_value_response(cf_metrics["operating_nwc"]),
+            delta_nwc=_to_metric_value_response(cf_metrics["delta_nwc"]),
+        ),
+        free_cash_flow=FreeCashFlowSectionSchema(
+            fcff_primary=_to_metric_value_response(cf_metrics["fcff_primary"]),
+            fcff_reconciled=_to_metric_value_response(cf_metrics["fcff_reconciled"]),
+            reconciliation_delta=recon_res.reconciliation_delta,
+            divergence_ratio=recon_res.divergence_ratio,
+            is_divergent=recon_res.is_divergent,
+            fcfe=_to_metric_value_response(cf_metrics["fcfe"]),
+            net_borrowing_tier=nb_tier,
+        ),
+        reinvestment=ReinvestmentSectionSchema(
+            reinvestment=_to_metric_value_response(cf_metrics["reinvestment"]),
+            reinvestment_rate=_to_metric_value_response(
+                cf_metrics["reinvestment_rate"]
+            ),
+        ),
+        growth=FundamentalGrowthSectionSchema(
+            fundamental_growth=_to_metric_value_response(
+                cf_metrics["fundamental_growth"]
+            ),
+        ),
+        diagnostics_summary=_aggregate_traceable_diagnostics(list(cf_metrics.values())),
+    )
+
+    # Convert Enterprise Value
+    ev_period, ev_curr, ev_metrics, pref_case, min_case, _ = dossier["enterprise_value"]
+    ev_resp = EnterpriseValueResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(ev_period),
+        reporting_currency=ev_curr.value if ev_curr else None,
+        market_capitalization=_to_metric_value_response(
+            ev_metrics["market_capitalization"]
+        ),
+        gross_debt=_to_metric_value_response(ev_metrics["gross_debt"]),
+        preferred_equity=_to_metric_value_response(ev_metrics["preferred_equity"]),
+        minority_interest=_to_metric_value_response(ev_metrics["minority_interest"]),
+        cash_and_liquid_investments=_to_metric_value_response(
+            ev_metrics["cash_and_liquid_investments"]
+        ),
+        enterprise_value=_to_metric_value_response(ev_metrics["enterprise_value"]),
+        preferred_equity_disclosure_case=pref_case,
+        minority_interest_disclosure_case=min_case,
+        total_capital=_to_metric_value_response(ev_metrics["total_capital"]),
+        weight_equity=_to_metric_value_response(ev_metrics["weight_equity"]),
+        weight_debt=_to_metric_value_response(ev_metrics["weight_debt"]),
+        weight_preferred=_to_metric_value_response(ev_metrics["weight_preferred"]),
+        diagnostics_summary=_aggregate_traceable_diagnostics(list(ev_metrics.values())),
+    )
+
+    # Convert Credit Risk
+    cr_period, cr_curr, piotroski_res, altman_res = dossier["credit_risk"]
+    cr_resp = CreditRiskResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(cr_period),
+        reporting_currency=cr_curr.value if cr_curr else None,
+        piotroski_f_score=PiotroskiScoreSchema(
+            raw_pass_count=piotroski_res.raw_pass_count,
+            evaluated_signal_count=piotroski_res.evaluated_signal_count,
+            total_signal_count=piotroski_res.total_signal_count,
+            coverage_ratio=piotroski_res.coverage_ratio,
+            status=piotroski_res.status.value,
+            metric_result=_to_metric_value_response(piotroski_res.metric_result),
+            signals=[
+                PiotroskiSignalSchema(
+                    signal_id=s.signal_id,
+                    status=s.status,
+                    raw_value=s.raw_value,
+                    comparison_value=s.comparison_value,
+                    notes=s.notes,
+                )
+                for s in piotroski_res.signals
+            ],
+        ),
+        altman_z_score=AltmanZScoreSchema(
+            dispatched_model=altman_res.dispatched_model,
+            dispatch_rationale=altman_res.dispatch_rationale,
+            coefficients=altman_res.coefficients,
+            factors=altman_res.factors,
+            total_score=altman_res.total_score,
+            zone=altman_res.zone,
+            metric_result=_to_metric_value_response(altman_res.metric_result),
+        ),
+        diagnostics_summary=_aggregate_traceable_diagnostics(
+            [piotroski_res.metric_result, altman_res.metric_result]
+        ),
+    )
+
+    # Combine global diagnostics
+    all_res = [
+        *ca_metrics.values(),
+        *cf_metrics.values(),
+        *ev_metrics.values(),
+        piotroski_res.metric_result,
+        altman_res.metric_result,
+    ]
+    global_diags = _aggregate_traceable_diagnostics(all_res)
+
+    return M7B3ComprehensiveResponse(
+        ticker=ticker.upper(),
+        period_type=period_type.value,
+        period=_to_period_schema(ca_period),
+        reporting_currency=ca_curr.value if ca_curr else None,
+        capital_allocation=ca_resp,
+        cash_flows=cf_resp,
+        enterprise_value=ev_resp,
+        credit_risk=cr_resp,
+        diagnostics_summary=global_diags,
     )

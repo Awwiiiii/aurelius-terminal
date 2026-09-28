@@ -18,10 +18,12 @@ from datetime import date
 from aurelius.domain.entities.company import CompanyProfile
 from aurelius.domain.entities.enums import MarketInterval
 from aurelius.domain.entities.financials import (
+    FinancialPeriod,
     FinancialStatement,
     FiscalPeriodType,
     StatementType,
 )
+from aurelius.domain.entities.market_cap import MarketCapObservation
 from aurelius.domain.entities.market_overview import (
     BenchmarkSnapshot,
     MarketMoverItem,
@@ -236,10 +238,25 @@ class MarketDataProvider(ABC):
 
         Returns:
             List of FinancialStatement domain entities sorted chronologically by period cutoff.
-
-        Raises:
-            InvalidTickerError: If the ticker is malformed.
-            DataNotFoundError: If the security does not exist or has no statement disclosures.
-            ProviderError: If the provider fails or is unreachable.
         """
         return []
+
+    async def get_market_cap_observation(
+        self,
+        ticker: str,
+        period: FinancialPeriod,
+    ) -> MarketCapObservation | None:
+        """
+        Retrieve market capitalization observation for a security and financial period.
+
+        Default implementation returns None. Providers supporting market capitalization
+        should override this method.
+
+        Args:
+            ticker: Normalized ticker symbol (e.g. 'AAPL').
+            period: Target FinancialPeriod.
+
+        Returns:
+            MarketCapObservation domain entity if available, else None.
+        """
+        return None
