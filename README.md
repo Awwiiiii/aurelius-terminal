@@ -10,14 +10,14 @@ AURELIUS does not reproduce, incorporate, or interface with proprietary Bloomber
 
 | Tier | State |
 |---|---|
-| Latest completed milestone | M7B.3 Phase 2 — implemented & accepted locally |
+| Latest completed milestone | Milestone 7 (Fundamental Analysis) — Complete 🔒 |
 | Backend test suite (latest verified run) | **384 passed**, 2 warnings |
 | Ruff check | ✅ Clean |
 | Ruff format --check | ✅ Clean |
 | mypy (affected scope) | ✅ Clean |
-| Phase 2 committed / tagged / pushed | ❌ Not yet |
+| M7B.3 Phase 2 committed / tagged / pushed | ✅ Complete (`milestone-7b.3-phase2` / `d927116` on `origin/main`) |
 
-> M7B.3 Phase 2 (Application Services, APIs & Temporal Market-Cap Resolution) has been implemented and verified locally. It has **not** yet received its final commit, tag, or push to the remote.
+> Milestone 7 (Fundamental Analysis) is complete. M7B.3 Phase 2 (Application Services, APIs & Temporal Market-Cap Resolution) has been implemented, verified, committed (`d927116e5378709dc0dfcb2218a5ac0eea48d95e`), tagged (`milestone-7b.3-phase2`), and pushed to `origin/main`.
 
 ---
 
@@ -120,7 +120,7 @@ AURELIUS is a multi-module financial research terminal spanning market data inge
 - **Piotroski F-Score methodology**: nine-signal scoring framework across profitability, leverage, and operating efficiency signals.
 - **Altman Z-Score methodology**: classic five-factor distress-prediction model (public-company formulation).
 
-**Phase 2 — Application Services, APIs & Temporal Market-Cap Resolution** (✅ Implemented & accepted locally — not yet committed/tagged):
+**Phase 2 — Application Services, APIs & Temporal Market-Cap Resolution** (`milestone-7b.3-phase2` — ✅ Complete 🔒):
 - `MarketCapObservation` canonical value object carrying `value`, `as_of_date`, `currency`, and `source`.
 - `MarketCapResolver` centralizing all market-cap resolution through strict temporal provenance.
 - Application services and REST API endpoints exposing capital allocation, cash-flow, and credit domain results.
@@ -286,7 +286,7 @@ AURELIUS enforces continuous verification across all tiers:
 | **M7B.1** | TTM Engine | ✅ Complete 🔒 | `milestone-7b.1` (`a71923f`) |
 | **M7B.2** | Advanced Fundamental Analysis Engine & Workspace | ✅ Complete 🔒 | `milestone-7b.2-phase4` (`2e92878`) |
 | **M7B.3 Ph.1** | Capital Allocation, Cash Flow & Credit Domain Engines | ✅ Complete 🔒 | `milestone-7b.3-phase1` (`8365188`) |
-| **M7B.3 Ph.2** | Application Services, APIs & Temporal Market-Cap Resolution | ✅ Implemented (local, not yet committed/tagged) | — |
+| **M7B.3 Ph.2** | Application Services, APIs & Temporal Market-Cap Resolution | ✅ Complete 🔒 | `milestone-7b.3-phase2` (`d927116`) |
 | **M8** | Valuation Engine | ⏳ Planned | — |
 | **M9** | Peer Comparison | ⏳ Planned | — |
 | **M10** | Financial Screener | ⏳ Planned | — |
